@@ -1,0 +1,39 @@
+from rest_framework import permissions
+
+
+class IsSuperAdmin(permissions.BasePermission):
+    """仅超级管理员可访问。"""
+
+    def has_permission(self, request, view):
+        return request.user and request.user.is_superuser and request.user.is_active
+
+
+class IsGroupLeader(permissions.BasePermission):
+    """组长及以上可访问（含 ADMIN）。"""
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_active:
+            return False
+        return request.user.is_superuser or request.user.role in ('LEADER', 'ADMIN')
+
+
+class IsOwnerOrLeader(permissions.BasePermission):
+    """任务负责人、创建人或组长及以上可操作。"""
+
+    def has_object_permission(self, request, view, obj):
+        if request.user.is_superuser:
+            return True
+        if request.user.role in ('LEADER', 'ADMIN'):
+            return True
+        if hasattr(obj, 'assignee') and obj.assignee == request.user:
+            return True
+        if hasattr(obj, 'creator') and obj.creator == request.user:
+            return True
+        return False
+
+
+class IsReadOnly(permissions.BasePermission):
+    """仅允许 GET/HEAD/OPTIONS。"""
+
+    def has_permission(self, request, view):
+        return request.method in permissions.SAFE_METHODS

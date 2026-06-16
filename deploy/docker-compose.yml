@@ -1,0 +1,81 @@
+# ============================================================
+# 种子团队任务管理系统 — 生产 Docker Compose
+# 用法: cd deploy && docker compose up -d
+# ============================================================
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: seedteam-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-seedteam}
+      POSTGRES_USER: ${POSTGRES_USER:-seedteam}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ../backups/wal_archive:/wal_archive
+    ports:
+      - "127.0.0.1:5432:5432"
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-seedteam}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.app
+    container_name: seedteam-app
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    volumes:
+      - ../backend/storage:/app/storage
+      - ../backend/logs:/app/logs
+      - ../backups/app_storage:/backups/app_storage
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: seedteam-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../frontend/dist:/usr/share/nginx/html:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ../backend/storage:/storage:ro
+    depends_on:
+      - app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/nginx-health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    name: seedteam-network

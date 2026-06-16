@@ -1,0 +1,6 @@
+-r base.txt
+
+# Production-only
+sentry-sdk[django]==2.8.*
+django-csp==3.8.*
+django-honeypot==1.1.*

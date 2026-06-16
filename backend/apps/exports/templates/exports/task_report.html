@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>任务报表</title>
+    <style>
+        body { font-family: "Microsoft YaHei", "SimHei", sans-serif; font-size: 12px; margin: 20px; }
+        h1 { text-align: center; color: #333; font-size: 20px; }
+        .meta { text-align: right; color: #666; margin-bottom: 15px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background-color: #4472C4; color: white; padding: 8px 6px; text-align: center; font-size: 11px; }
+        td { padding: 6px; border: 1px solid #ddd; vertical-align: middle; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        .status-PENDING { color: #909399; }
+        .status-IN_PROGRESS { color: #409EFF; }
+        .status-IN_REVIEW { color: #E6A23C; }
+        .status-COMPLETED { color: #67C23A; }
+        .status-REJECTED { color: #F56C6C; }
+        .priority-URGENT { color: #F56C6C; font-weight: bold; }
+        .priority-HIGH { color: #E6A23C; }
+        .footer { text-align: center; color: #999; margin-top: 20px; font-size: 10px; }
+    </style>
+</head>
+<body>
+    <h1>种子团队任务报表</h1>
+    <div class="meta">生成时间：{{ generated_at|date:"Y-m-d H:i" }} | 共 {{ total }} 条任务</div>
+    <table>
+        <thead>
+            <tr>
+                <th>编号</th>
+                <th>标题</th>
+                <th>状态</th>
+                <th>优先级</th>
+                <th>进度</th>
+                <th>负责人</th>
+                <th>截止日期</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in tasks %}
+            <tr>
+                <td>{{ task.task_no }}</td>
+                <td>{{ task.title }}</td>
+                <td class="status-{{ task.status }}">{{ status_map|default_if_none:"" }}{{ task.get_status_display }}</td>
+                <td class="priority-{{ task.priority }}">{{ task.get_priority_display }}</td>
+                <td>{{ task.progress }}%</td>
+                <td>{% if task.assignee %}{{ task.assignee.username }}{% endif %}</td>
+                <td>{% if task.deadline %}{{ task.deadline|date:"Y-m-d" }}{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div class="footer">种子团队任务管理系统 — 自动生成</div>
+</body>
+</html>

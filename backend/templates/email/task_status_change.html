@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>任务状态变更</title>
+</head>
+<body style="font-family: 'Microsoft YaHei', Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+        <div style="border-bottom: 2px solid #E6A23C; padding-bottom: 15px; margin-bottom: 20px;">
+            <h2 style="color: #333; margin: 0;">{{ site_name }} — 任务状态变更</h2>
+        </div>
+
+        <p style="color: #555; font-size: 14px;">
+            您好 <strong>{{ assignee.username }}</strong>，您负责的任务状态已更新：
+        </p>
+
+        <div style="background: #f8f9fa; border-radius: 6px; padding: 20px; margin: 20px 0;">
+            <div style="color: #666; font-size: 13px; margin-bottom: 8px;">{{ task.task_no }}</div>
+            <h3 style="color: #333; margin: 0 0 15px 0;">{{ task.title }}</h3>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 15px; padding: 15px; background: white; border-radius: 4px;">
+                <span style="background: #e9ecef; color: #555; padding: 5px 15px; border-radius: 15px; font-size: 13px;">{{ old_status_label }}</span>
+                <span style="color: #999; font-size: 20px;">→</span>
+                <span style="background: #4472C4; color: white; padding: 5px 15px; border-radius: 15px; font-size: 13px; font-weight: bold;">{{ new_status_label }}</span>
+            </div>
+        </div>
+
+        <div style="margin-top: 25px; padding-top: 15px; border-top: 1px solid #e9ecef; color: #999; font-size: 12px;">
+            此邮件由系统自动发送，请勿直接回复。
+        </div>
+    </div>
+</body>
+</html>

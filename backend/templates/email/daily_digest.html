@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>每日任务摘要</title>
+</head>
+<body style="font-family: 'Microsoft YaHei', Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+        <div style="border-bottom: 2px solid #67C23A; padding-bottom: 15px; margin-bottom: 20px;">
+            <h2 style="color: #333; margin: 0;">{{ site_name }} — 每日任务摘要</h2>
+            <p style="color: #999; font-size: 12px; margin: 5px 0 0 0;">{{ summary.date }}</p>
+        </div>
+
+        <p style="color: #555; font-size: 14px;">
+            您好 <strong>{{ user.username }}</strong>，以下是您的今日任务概览：
+        </p>
+
+        <!-- 统计卡片 -->
+        <div style="display: flex; gap: 10px; margin: 20px 0;">
+            <div style="flex: 1; background: #e8f5e9; border-radius: 6px; padding: 15px; text-align: center;">
+                <div style="font-size: 24px; font-weight: bold; color: #67C23A;">{{ summary.completed_today }}</div>
+                <div style="font-size: 12px; color: #666;">今日完成</div>
+            </div>
+            <div style="flex: 1; background: #e3f2fd; border-radius: 6px; padding: 15px; text-align: center;">
+                <div style="font-size: 24px; font-weight: bold; color: #409EFF;">{{ summary.in_progress }}</div>
+                <div style="font-size: 12px; color: #666;">进行中</div>
+            </div>
+            <div style="flex: 1; background: #fce4ec; border-radius: 6px; padding: 15px; text-align: center;">
+                <div style="font-size: 24px; font-weight: bold; color: #F56C6C;">{{ summary.overdue }}</div>
+                <div style="font-size: 12px; color: #666;">已逾期</div>
+            </div>
+        </div>
+
+        <!-- 逾期任务列表 -->
+        {% if summary.overdue_tasks %}
+        <div style="margin: 20px 0;">
+            <h3 style="color: #F56C6C; font-size: 14px; border-left: 3px solid #F56C6C; padding-left: 10px;">逾期任务</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                    <tr style="background: #f8f9fa;">
+                        <th style="padding: 8px; border: 1px solid #e9ecef; text-align: left;">编号</th>
+                        <th style="padding: 8px; border: 1px solid #e9ecef; text-align: left;">标题</th>
+                        <th style="padding: 8px; border: 1px solid #e9ecef; text-align: left;">截止日期</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for task in summary.overdue_tasks %}
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #e9ecef;">{{ task.task_no }}</td>
+                        <td style="padding: 8px; border: 1px solid #e9ecef;">{{ task.title }}</td>
+                        <td style="padding: 8px; border: 1px solid #e9ecef; color: #F56C6C;">{{ task.deadline|date:"m-d H:i" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <!-- 即将到期 -->
+        {% if summary.upcoming_tasks %}
+        <div style="margin: 20px 0;">
+            <h3 style="color: #E6A23C; font-size: 14px; border-left: 3px solid #E6A23C; padding-left: 10px;">即将到期（3天内）</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                    <tr style="background: #f8f9fa;">
+                        <th style="padding: 8px; border: 1px solid #e9ecef; text-align: left;">编号</th>
+                        <th style="padding: 8px; border: 1px solid #e9ecef; text-align: left;">标题</th>
+                        <th style="padding: 8px; border: 1px solid #e9ecef; text-align: left;">截止日期</th>
+                        <th style="padding: 8px; border: 1px solid #e9ecef; text-align: left;">进度</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for task in summary.upcoming_tasks %}
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #e9ecef;">{{ task.task_no }}</td>
+                        <td style="padding: 8px; border: 1px solid #e9ecef;">{{ task.title }}</td>
+                        <td style="padding: 8px; border: 1px solid #e9ecef;">{{ task.deadline|date:"m-d H:i" }}</td>
+                        <td style="padding: 8px; border: 1px solid #e9ecef;">{{ task.progress }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <div style="margin-top: 25px; padding-top: 15px; border-top: 1px solid #e9ecef; color: #999; font-size: 12px;">
+            此邮件由系统每日 09:00 自动发送，请勿直接回复。
+        </div>
+    </div>
+</body>
+</html>
