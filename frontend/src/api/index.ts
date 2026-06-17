@@ -66,8 +66,9 @@ api.interceptors.response.use(
       }
     }
 
-    // Show error message
-    const message = error.response?.data?.error?.message || error.message || '请求失败'
+    // Show error message — match DRF error response format
+    const data = error.response?.data
+    const message = data?.detail || data?.error?.message || data?.error || error.message || '请求失败'
     ElMessage.error(message)
 
     return Promise.reject(error)

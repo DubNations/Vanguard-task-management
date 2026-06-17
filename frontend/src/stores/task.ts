@@ -1,6 +1,19 @@
 import { defineStore } from 'pinia'
 import api from '@/api'
 
+export interface TaskParticipant {
+  id: string
+  user: string
+  user_name: string
+  role: string
+  role_display: string
+  points: number
+  status: string
+  status_display: string
+  created_at: string
+  completed_at: string | null
+}
+
 export interface Task {
   id: string
   task_no: string
@@ -11,6 +24,10 @@ export interface Task {
   priority: string
   priority_display: string
   progress: number
+  task_mode: string
+  task_mode_display: string
+  max_claimers: number | null
+  current_claimers: number
   assignee: string | null
   assignee_name: string
   creator: string
@@ -24,6 +41,8 @@ export interface Task {
   days_until_deadline: number | null
   tags: string[]
   custom_fields: Record<string, unknown>
+  reward_points: number
+  participants: TaskParticipant[]
   comments_count: number
   files_count: number
   created_at: string
@@ -95,6 +114,7 @@ export const useTaskStore = defineStore('tasks', {
     async createTask(payload: Partial<Task>) {
       const { data } = await api.post('/tasks/', payload)
       this.tasks.unshift(data)
+      this.totalCount++
       return data
     },
 

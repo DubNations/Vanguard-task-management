@@ -23,23 +23,17 @@ class DashboardService:
         qs = DashboardService._filter_by_user(qs, user)
 
         now = timezone.now()
-        return {
-            'total': qs.count(),
-            'pending': qs.filter(status='PENDING').count(),
-            'in_progress': qs.filter(status='IN_PROGRESS').count(),
-            'in_review': qs.filter(status='IN_REVIEW').count(),
-            'completed': qs.filter(status='COMPLETED').count(),
-            'overdue': qs.filter(
-                deadline__lt=now,
-            ).exclude(status__in=['COMPLETED', 'CANCELLED']).count(),
-            'completed_today': qs.filter(
-                status='COMPLETED',
-                completed_at__date=now.date(),
-            ).count(),
-            'created_this_week': qs.filter(
-                created_at__gte=now - timedelta(days=7),
-            ).count(),
-        }
+        stats = qs.aggregate(
+            total=Count('id'),
+            pending=Count('id', filter=Q(status='PENDING')),
+            in_progress=Count('id', filter=Q(status='IN_PROGRESS')),
+            in_review=Count('id', filter=Q(status='IN_REVIEW')),
+            completed=Count('id', filter=Q(status='COMPLETED')),
+            overdue=Count('id', filter=Q(deadline__lt=now) & ~Q(status__in=['COMPLETED', 'CANCELLED'])),
+            completed_today=Count('id', filter=Q(status='COMPLETED', completed_at__date=now.date())),
+            created_this_week=Count('id', filter=Q(created_at__gte=now - timedelta(days=7))),
+        )
+        return stats
 
     @staticmethod
     def get_status_distribution(user=None):

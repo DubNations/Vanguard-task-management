@@ -33,6 +33,11 @@ RUN python manage.py collectstatic --noinput 2>/dev/null || true
 # Create necessary directories
 RUN mkdir -p /app/storage /app/logs
 
+# Run as non-root user
+RUN addgroup --system app && adduser --system --ingroup app app
+RUN chown -R app:app /app
+USER app
+
 EXPOSE 8000
 
 # Health check

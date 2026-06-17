@@ -20,7 +20,10 @@ export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     accessToken: localStorage.getItem('access_token'),
     refreshToken: localStorage.getItem('refresh_token'),
-    user: JSON.parse(localStorage.getItem('user') || 'null'),
+    user: (() => {
+      try { return JSON.parse(localStorage.getItem('user') || 'null') }
+      catch { return null }
+    })(),
   }),
 
   getters: {

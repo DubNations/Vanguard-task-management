@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, MoreFilled } from '@element-plus/icons-vue'
 
 const loading = ref(true)
+const error = ref<string | null>(null)
 const users = ref<any[]>([])
 const searchText = ref('')
 
@@ -53,11 +54,12 @@ const roleOptions = [
 
 const fetchUsers = async () => {
   loading.value = true
+  error.value = null
   try {
     const { data } = await api.get('/auth/users/')
     users.value = data.results || data || []
   } catch {
-    // handled by interceptor
+    error.value = '加载失败，请重试'
   } finally {
     loading.value = false
   }
@@ -144,6 +146,9 @@ onMounted(fetchUsers)
 
 <template>
   <div class="page-container">
+    <el-result v-if="error" icon="error" :title="error">
+      <template #extra><el-button @click="fetchUsers">重试</el-button></template>
+    </el-result>
     <div class="page-container__header">
       <h2>用户管理</h2>
       <div style="display: flex; gap: 12px; align-items: center;">

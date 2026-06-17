@@ -35,7 +35,8 @@ const handleSubmit = async () => {
   try {
     await auth.login(form.email, form.password)
     ElMessage.success('登录成功')
-    const redirect = (route.query.redirect as string) || '/'
+    const rawRedirect = (route.query.redirect as string) || '/'
+    const redirect = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/'
     router.push(redirect)
   } catch {
     // Error handled by interceptor

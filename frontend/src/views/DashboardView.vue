@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
@@ -13,8 +13,11 @@ const trendData = ref<any[]>([])
 const myInProgress = ref<any[]>([])
 const myPending = ref<any[]>([])
 const loading = ref(true)
+const error = ref<string | null>(null)
 
-onMounted(async () => {
+const fetchData = async () => {
+  loading.value = true
+  error.value = null
   try {
     const [summaryRes, statusRes, trendRes, inProgressRes, pendingRes] = await Promise.all([
       api.get('/dashboard/summary/'),
@@ -29,20 +32,13 @@ onMounted(async () => {
     myInProgress.value = inProgressRes.data.results || inProgressRes.data || []
     myPending.value = pendingRes.data.results || pendingRes.data || []
   } catch {
-    // handled by interceptor
+    error.value = '加载失败，请重试'
   } finally {
     loading.value = false
   }
-})
-
-const statusLabels: Record<string, string> = {
-  PENDING: '待领取',
-  IN_PROGRESS: '进行中',
-  IN_REVIEW: '待审核',
-  COMPLETED: '已完成',
-  REJECTED: '已退回',
-  CANCELLED: '已取消',
 }
+
+onMounted(fetchData)
 
 const statusColors: Record<string, string> = {
   PENDING: '#909399',
@@ -60,12 +56,14 @@ const calcTrendMax = () => {
   return Math.max(...trendData.value.flatMap((w: any) => [w.created, w.completed]), 1)
 }
 
-import { watch } from 'vue'
 watch(trendData, () => { trendMax.value = calcTrendMax() }, { immediate: true })
 </script>
 
 <template>
   <div class="page-container" v-loading="loading">
+    <el-result v-if="error" icon="error" :title="error">
+      <template #extra><el-button @click="fetchData">重试</el-button></template>
+    </el-result>
     <div class="page-container__header">
       <h2>仪表盘</h2>
     </div>

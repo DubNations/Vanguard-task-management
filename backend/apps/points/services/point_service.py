@@ -25,6 +25,11 @@ class PointService:
         return balance
 
     @staticmethod
+    def _get_or_create_balance_for_update(user):
+        balance, _ = PointBalance.objects.select_for_update().get_or_create(user=user)
+        return balance
+
+    @staticmethod
     def _calculate_points(action, task=None):
         """按规则计算积分。"""
         try:
@@ -55,13 +60,14 @@ class PointService:
 
     @staticmethod
     @transaction.atomic
-    def award(user, task=None, action='TASK_COMPLETED', reason=''):
-        """发放积分。"""
-        points = PointService._calculate_points(action, task)
+    def award(user, task=None, action='TASK_COMPLETED', reason='', points=0):
+        """发放积分。points > 0 时直接使用，否则按规则计算。"""
+        if points <= 0:
+            points = PointService._calculate_points(action, task)
         if points <= 0:
             return 0
 
-        balance = PointService._get_or_create_balance(user)
+        balance = PointService._get_or_create_balance_for_update(user)
         balance.total_earned += points
         balance.balance += points
         balance.save()
@@ -84,7 +90,7 @@ class PointService:
         if points <= 0:
             return 0
 
-        balance = PointService._get_or_create_balance(user)
+        balance = PointService._get_or_create_balance_for_update(user)
         actual = min(points, balance.balance)
         if actual <= 0:
             return 0

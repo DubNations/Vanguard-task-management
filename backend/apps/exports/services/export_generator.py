@@ -25,14 +25,19 @@ def generate_export(job):
 
     qs = qs.order_by('-created_at')
 
+    row_count = qs.count()
+
     if job.format == 'EXCEL':
-        return _export_excel(qs, job)
+        result = _export_excel(qs, job)
     elif job.format == 'CSV':
-        return _export_csv(qs, job)
+        result = _export_csv(qs, job)
     elif job.format == 'PDF':
-        return _export_pdf(qs, job)
+        result = _export_pdf(qs, job)
     else:
         raise ValueError(f'不支持的导出格式: {job.format}')
+
+    result['row_count'] = row_count
+    return result
 
 
 def _export_excel(qs, job):
@@ -40,6 +45,9 @@ def _export_excel(qs, job):
     from apps.tasks.models import Task
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    # Cache count before iteration to avoid double evaluation
+    row_count = qs.count()
 
     wb = Workbook()
     ws = wb.active
@@ -104,7 +112,6 @@ def _export_excel(qs, job):
     return {
         'file': ContentFile(buffer.read(), name=filename),
         'file_name': filename,
-        'row_count': qs.count(),
     }
 
 
@@ -140,7 +147,6 @@ def _export_csv(qs, job):
     return {
         'file': ContentFile(content, name=filename),
         'file_name': filename,
-        'row_count': qs.count(),
     }
 
 
@@ -160,7 +166,6 @@ def _export_pdf(qs, job):
         'generated_at': datetime.now(),
         'status_map': dict(Task.Status.choices),
         'priority_map': dict(Task.Priority.choices),
-        'total': qs.count(),
     }
 
     html_string = render_to_string('exports/task_report.html', context)
@@ -172,5 +177,4 @@ def _export_pdf(qs, job):
     return {
         'file': ContentFile(pdf_bytes, name=filename),
         'file_name': filename,
-        'row_count': qs.count(),
     }

@@ -10,30 +10,30 @@ echo "=== 种子团队任务管理系统 — 初始化 ==="
 
 # 1. 检查 .env.prod
 if [ ! -f deploy/.env.prod ]; then
-    echo "[1/6] 创建 .env.prod ..."
+    echo "[1/7] 创建 .env.prod ..."
     cp deploy/.env.prod.example deploy/.env.prod
     echo "  ⚠️  请编辑 deploy/.env.prod 修改密码和密钥！"
 else
-    echo "[1/6] .env.prod 已存在，跳过"
+    echo "[1/7] .env.prod 已存在，跳过"
 fi
 
 # 2. 构建镜像
-echo "[2/6] 构建 Docker 镜像 ..."
+echo "[2/7] 构建 Docker 镜像 ..."
 cd deploy && docker compose build --no-cache
 
 # 3. 启动服务
-echo "[3/6] 启动服务 ..."
+echo "[3/7] 启动服务 ..."
 docker compose up -d
 
 # 4. 等待数据库就绪
-echo "[4/6] 等待 PostgreSQL 就绪 ..."
+echo "[4/7] 等待 PostgreSQL 就绪 ..."
 until docker compose exec -T db pg_isready -U seedteam 2>/dev/null; do
     sleep 2
 done
 echo "  PostgreSQL 就绪"
 
 # 5. 数据库迁移
-echo "[5/6] 执行数据库迁移 ..."
+echo "[5/7] 执行数据库迁移 ..."
 docker compose exec -T app python manage.py migrate --noinput
 
 # 6. 创建种子数据

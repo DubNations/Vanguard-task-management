@@ -36,8 +36,8 @@ docker exec seedteam-drill-db pg_restore -U seedteam -d seedteam_drill --clean -
 
 # 验证
 echo "[3/4] 验证数据 ..."
-TASK_COUNT=$(docker exec seedteam-drill-db psql -U seedteam -d seedteam_drill -t -c "SELECT COUNT(*) FROM tasks;" 2>/dev/null | tr -d ' ')
-USER_COUNT=$(docker exec seedteam-drill-db psql -U seedteam -d seedteam_drill -t -c "SELECT COUNT(*) FROM users;" 2>/dev/null | tr -d ' ')
+TASK_COUNT=$(docker exec seedteam-drill-db psql -U seedteam -d seedteam_drill -t -c "SELECT COUNT(*) FROM \"tasks_task\";" 2>/dev/null | tr -d ' ')
+USER_COUNT=$(docker exec seedteam-drill-db psql -U seedteam -d seedteam_drill -t -c "SELECT COUNT(*) FROM \"accounts_user\";" 2>/dev/null | tr -d ' ')
 
 echo "  任务数: ${TASK_COUNT:-0}"
 echo "  用户数: ${USER_COUNT:-0}"

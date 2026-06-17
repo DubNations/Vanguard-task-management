@@ -1,18 +1,22 @@
+import logging
+
 from rest_framework import generics, status, views
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 
 from common.permissions import IsOwnerOrLeader, IsGroupLeader
 from common.pagination import StandardPagination
-from .models import Task, TaskHistory, TaskComment
+from .models import Task, TaskHistory, TaskComment, TaskParticipant
 from .serializers import (
     TaskListSerializer, TaskDetailSerializer, TaskCreateSerializer,
     TaskTransitionSerializer, TaskProgressSerializer,
     TaskHistorySerializer, TaskCommentSerializer, TaskCommentCreateSerializer,
+    TaskParticipantSerializer,
 )
 from .services.task_service import TaskService
+
+logger = logging.getLogger(__name__)
 
 
 class TaskListView(generics.ListCreateAPIView):
@@ -26,19 +30,27 @@ class TaskListView(generics.ListCreateAPIView):
         return TaskListSerializer
 
     def get_queryset(self):
-        from django.db.models import Q, Count
+        from django.db.models import Q, Count, Exists, OuterRef
 
         qs = Task.objects.select_related(
             'assignee', 'creator', 'reviewer'
         ).annotate(
             comments_count=Count('comments', distinct=True),
             files_count=Count('files', distinct=True),
+            participants_count=Count('participants', distinct=True),
         )
 
-        # 数据隔离：非组长以上只看自己的任务
+        # 数据隔离：非组长以上只看自己的任务（包括参与的任务）
         user = self.request.user
         if not user.is_superuser and user.role not in ('LEADER', 'ADMIN'):
-            qs = qs.filter(Q(assignee=user) | Q(creator=user))
+            participation_exists = Exists(
+                TaskParticipant.objects.filter(
+                    task=OuterRef('pk'), user=user
+                )
+            )
+            qs = qs.filter(
+                Q(assignee=user) | Q(creator=user) | participation_exists
+            )
 
         # 筛选参数
         params = self.request.query_params
@@ -54,6 +66,9 @@ class TaskListView(generics.ListCreateAPIView):
         assignee_val = params.get('assignee')
         if assignee_val:
             qs = qs.filter(assignee_id=assignee_val)
+        task_mode_val = params.get('task_mode')
+        if task_mode_val:
+            qs = qs.filter(task_mode=task_mode_val)
 
         # 排序
         ordering = params.get('ordering', '-created_at')
@@ -114,6 +129,13 @@ class TaskTransitionView(views.APIView):
         if not perm.has_object_permission(request, self, task):
             raise PermissionDenied('您无权操作此任务')
 
+        # 派发模式完成：仅总牵头人可触发
+        new_status = request.data.get('status')
+        if (new_status == Task.Status.COMPLETED
+                and task.task_mode == Task.TaskMode.ASSIGNED):
+            if not self._is_chief_lead(request.user, task):
+                raise PermissionDenied('仅总牵头人可完成派发任务')
+
         serializer = TaskTransitionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -127,6 +149,19 @@ class TaskTransitionView(views.APIView):
 
         return Response(TaskDetailSerializer(task).data)
 
+    @staticmethod
+    def _is_chief_lead(user, task):
+        """检查用户是否为该任务的总牵头人。"""
+        if user.is_superuser or user.role in ('LEADER', 'ADMIN'):
+            return True
+        if task.creator == user:
+            return True
+        return task.participants.filter(
+            user=user,
+            role=TaskParticipant.Role.CHIEF_LEAD,
+            status__in=[TaskParticipant.Status.ACCEPTED, TaskParticipant.Status.COMPLETED],
+        ).exists()
+
 
 class TaskProgressView(views.APIView):
     permission_classes = [IsAuthenticated]
@@ -137,7 +172,6 @@ class TaskProgressView(views.APIView):
         except Task.DoesNotExist:
             return Response({'error': '任务不存在'}, status=status.HTTP_404_NOT_FOUND)
 
-        # 对象级权限检查
         perm = IsOwnerOrLeader()
         if not perm.has_object_permission(request, self, task):
             raise PermissionDenied('您无权操作此任务')
@@ -152,54 +186,251 @@ class TaskProgressView(views.APIView):
 
 
 class TaskClaimView(views.APIView):
-    """揭榜挂帅 — 任务领取 API。"""
+    """揭榜挂帅 — 任务领取 API（支持自由揭榜 + 固定揭榜）。"""
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
-        try:
-            task = Task.objects.select_related('assignee', 'creator').get(pk=pk)
-        except Task.DoesNotExist:
-            return Response({'error': '任务不存在'}, status=status.HTTP_404_NOT_FOUND)
+        from django.db import transaction
 
-        # 任务必须未分配且状态为 PENDING
-        if task.assignee is not None:
-            return Response({'error': '该任务已有负责人'}, status=status.HTTP_400_BAD_REQUEST)
-        if task.status != Task.Status.PENDING:
-            return Response({'error': '仅待领取状态的任务可领取'}, status=status.HTTP_400_BAD_REQUEST)
-        # 创建人不能领取自己创建的任务
-        if task.creator == request.user:
-            return Response({'error': '不能领取自己创建的任务'}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            try:
+                task = Task.objects.select_for_update().get(pk=pk)
+            except Task.DoesNotExist:
+                return Response({'error': '任务不存在'}, status=status.HTTP_404_NOT_FOUND)
 
-        from apps.notifications.models import Notification
+            # 任务必须是可领取模式
+            if task.task_mode not in (Task.TaskMode.FREE_CLAIM, Task.TaskMode.FIXED_CLAIM):
+                return Response({'error': '该任务非揭榜模式'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # 创建人不能领取自己创建的任务
+            if task.creator == request.user:
+                return Response({'error': '不能领取自己创建的任务'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # 已领取过
+            if TaskParticipant.objects.filter(task=task, user=request.user).exists():
+                return Response({'error': '您已领取过该任务'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # 固定揭榜：名额校验
+            if task.task_mode == Task.TaskMode.FIXED_CLAIM:
+                if task.max_claimers and task.current_claimers >= task.max_claimers:
+                    return Response({'error': '名额已满，无法领取'}, status=status.HTTP_400_BAD_REQUEST)
+
         from django.utils import timezone
 
-        # 领取任务
-        task.assignee = request.user
-        task.status = Task.Status.IN_PROGRESS
-        task.started_at = timezone.now()
-        task.save(update_fields=['assignee', 'status', 'started_at', 'updated_at'])
-
-        # 创建通知
-        Notification.objects.create(
-            recipient=request.user,
-            type=Notification.Type.TASK_ASSIGNED,
-            title=f'您已领取任务: {task.title}',
-            content=f'任务编号: {task.task_no}',
+        # 创建参与者记录
+        participant = TaskParticipant.objects.create(
             task=task,
-            actor=request.user,
+            user=request.user,
+            role=TaskParticipant.Role.CLAIMER,
+            points=task.reward_points,
+            status=TaskParticipant.Status.ACCEPTED,
         )
+
+        # 更新已领取人数
+        task.current_claimers += 1
+        task.save(update_fields=['current_claimers', 'updated_at'])
+
+        # 通知创建人
+        from apps.notifications.models import Notification
+        try:
+            claimer_name = request.user.display_name or request.user.username
+            Notification.objects.create(
+                recipient=task.creator,
+                type=Notification.Type.TASK_ASSIGNED,
+                title=f'任务被领取: {task.title}',
+                content=f'{claimer_name} 领取了任务 ({task.current_claimers}/{task.max_claimers or "不限"})',
+                task=task,
+                actor=request.user,
+            )
+        except Exception:
+            logger.warning('领取通知发送失败: task=%s user=%s', task.task_no, request.user.pk, exc_info=True)
+
+        # 固定揭榜：额满通知
+        if (task.task_mode == Task.TaskMode.FIXED_CLAIM
+                and task.max_claimers
+                and task.current_claimers >= task.max_claimers):
+            try:
+                Notification.objects.create(
+                    recipient=task.creator,
+                    type=Notification.Type.TASK_STATUS,
+                    title=f'名额已满: {task.title}',
+                    content=f'任务 {task.task_no} 领取名额已满 ({task.current_claimers}/{task.max_claimers})',
+                    task=task,
+                    actor=request.user,
+                )
+            except Exception:
+                logger.warning('额满通知发送失败: task=%s', task.task_no, exc_info=True)
 
         # 记录历史
         TaskHistory.objects.create(
             task=task,
             action=TaskHistory.Action.ASSIGNED,
             actor=request.user,
-            old_value={'assignee': None, 'status': 'PENDING'},
-            new_value={'assignee': str(request.user.id), 'status': 'IN_PROGRESS'},
-            note='领取任务（揭榜挂帅）',
+            old_value={'status': task.status},
+            new_value={'current_claimers': task.current_claimers},
+            note=f'领取任务（{task.get_task_mode_display()}）',
         )
 
-        return Response(TaskDetailSerializer(task).data)
+        return Response(TaskParticipantSerializer(participant).data, status=status.HTTP_201_CREATED)
+
+
+class TaskParticipantListView(generics.ListCreateAPIView):
+    """任务参与者列表 / 添加参与者（仅派发模式）。"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = TaskParticipantSerializer
+
+    def get_queryset(self):
+        return TaskParticipant.objects.filter(
+            task_id=self.kwargs['pk']
+        ).select_related('user')
+
+    def perform_create(self, serializer):
+        try:
+            task = Task.objects.get(pk=self.kwargs['pk'])
+        except Task.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound('任务不存在')
+
+        if task.task_mode != Task.TaskMode.ASSIGNED:
+            raise PermissionDenied('仅派发模式可添加参与者')
+
+        user = self.request.user
+        if not (user.is_superuser or user.role in ('LEADER', 'ADMIN')
+                or task.creator == user):
+            raise PermissionDenied('无权添加参与者')
+
+        participant = serializer.save(task=task)
+        self._participant = participant
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return Response(
+            TaskParticipantSerializer(self._participant).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class TaskParticipantDetailView(views.APIView):
+    """修改/移除参与者。"""
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, pk, pid):
+        try:
+            task = Task.objects.get(pk=pk)
+        except Task.DoesNotExist:
+            return Response({'error': '任务不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            participant = TaskParticipant.objects.get(pk=pid, task=task)
+        except TaskParticipant.DoesNotExist:
+            return Response({'error': '参与者不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+        if not (user.is_superuser or user.role in ('LEADER', 'ADMIN')
+                or task.creator == user):
+            raise PermissionDenied('无权修改参与者')
+
+        role = request.data.get('role', participant.role)
+        points = request.data.get('points', participant.points)
+        participant.role = role
+        participant.points = points
+        participant.save(update_fields=['role', 'points'])
+
+        return Response(TaskParticipantSerializer(participant).data)
+
+    def delete(self, request, pk, pid):
+        try:
+            task = Task.objects.get(pk=pk)
+        except Task.DoesNotExist:
+            return Response({'error': '任务不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            participant = TaskParticipant.objects.get(pk=pid, task=task)
+        except TaskParticipant.DoesNotExist:
+            return Response({'error': '参与者不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+        if not (user.is_superuser or user.role in ('LEADER', 'ADMIN')
+                or task.creator == user):
+            raise PermissionDenied('无权移除参与者')
+
+        participant.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TaskParticipantCompleteView(views.APIView):
+    """管理员/发布者判定揭榜领取人完成 → 发放积分。"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk, pid):
+        try:
+            task = Task.objects.get(pk=pk)
+        except Task.DoesNotExist:
+            return Response({'error': '任务不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        if task.task_mode not in (Task.TaskMode.FREE_CLAIM, Task.TaskMode.FIXED_CLAIM):
+            return Response({'error': '仅揭榜模式可执行此操作'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            participant = TaskParticipant.objects.get(pk=pid, task=task)
+        except TaskParticipant.DoesNotExist:
+            return Response({'error': '参与者不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        if participant.status == TaskParticipant.Status.COMPLETED:
+            return Response({'error': '该参与者已完成'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 权限：管理员、创建人、发布者可判定
+        user = request.user
+        if not (user.is_superuser or user.role in ('LEADER', 'ADMIN')
+                or task.creator == user):
+            raise PermissionDenied('无权判定完成')
+
+        from django.utils import timezone
+        from apps.points.services.point_service import PointService
+
+        # 标记完成
+        participant.status = TaskParticipant.Status.COMPLETED
+        participant.completed_at = timezone.now()
+        participant.save(update_fields=['status', 'completed_at'])
+
+        # 发放积分
+        try:
+            PointService.award(
+                participant.user, task,
+                action='TASK_COMPLETED',
+                points=participant.points,
+                reason=f'[揭榜] {task.task_no} 完成',
+            )
+        except Exception:
+            logger.warning('积分发放失败: task=%s user=%s', task.task_no, participant.user.pk, exc_info=True)
+
+        # 记录历史
+        TaskHistory.objects.create(
+            task=task,
+            action=TaskHistory.Action.STATUS_CHANGE,
+            actor=user,
+            old_value={'participant_status': participant.status},
+            new_value={'participant_status': TaskParticipant.Status.COMPLETED},
+            note=f'判定 {participant.user.username} 完成揭榜任务',
+        )
+
+        # 通知领取人
+        from apps.notifications.models import Notification
+        try:
+            Notification.objects.create(
+                recipient=participant.user,
+                type=Notification.Type.TASK_STATUS,
+                title=f'任务确认完成: {task.title}',
+                content=f'积分 {participant.points} 已发放',
+                task=task,
+                actor=user,
+            )
+        except Exception:
+            logger.warning('完成通知发送失败: task=%s user=%s', task.task_no, participant.user.pk, exc_info=True)
+
+        return Response(TaskParticipantSerializer(participant).data)
 
 
 class TaskHistoryListView(generics.ListAPIView):
@@ -217,7 +448,9 @@ class TaskHistoryListView(generics.ListAPIView):
             try:
                 task = Task.objects.get(pk=self.kwargs['pk'])
                 if task.assignee != user and task.creator != user:
-                    return qs.none()
+                    # 检查是否为参与者
+                    if not TaskParticipant.objects.filter(task=task, user=user).exists():
+                        return qs.none()
             except Task.DoesNotExist:
                 return qs.none()
         return qs
@@ -241,7 +474,11 @@ class TaskCommentListView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         from apps.notifications.models import Notification
 
-        task = Task.objects.get(pk=self.kwargs['pk'])
+        try:
+            task = Task.objects.get(pk=self.kwargs['pk'])
+        except Task.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound('任务不存在')
         comment = serializer.save(author=self.request.user, task=task)
 
         TaskHistory.objects.create(
@@ -251,7 +488,6 @@ class TaskCommentListView(generics.ListCreateAPIView):
             note=comment.content[:100],
         )
 
-        # 评论通知：通知 assignee 和 creator（排除评论者本人）
         recipients = set()
         if task.assignee and task.assignee != self.request.user:
             recipients.add(task.assignee)
@@ -281,9 +517,9 @@ class KanbanView(views.APIView):
 
         user = request.user
         if not user.is_superuser and user.role not in ('LEADER', 'ADMIN'):
-            qs = qs.filter(Q(assignee=user) | Q(creator=user))
+            participation_q = Q(participants__user=user)
+            qs = qs.filter(Q(assignee=user) | Q(creator=user) | participation_q).distinct()
 
-        # 单次查询，Python 层分组
         all_tasks = list(qs.order_by('status', '-priority', '-created_at')[:200])
 
         columns = {}

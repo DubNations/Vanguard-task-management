@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 
 const loading = ref(true)
+const error = ref<string | null>(null)
 const rules = ref<any[]>([])
 const dialogVisible = ref(false)
 const formRef = ref<FormInstance>()
@@ -27,10 +28,13 @@ const formRules: FormRules = {
 
 const fetchRules = async () => {
   loading.value = true
+  error.value = null
   try {
     const { data } = await api.get('/points/rules/')
     rules.value = data.results || data || []
-  } catch {} finally {
+  } catch {
+    error.value = '加载失败，请重试'
+  } finally {
     loading.value = false
   }
 }
@@ -92,12 +96,23 @@ onMounted(fetchRules)
 
 <template>
   <div class="page-container">
+    <el-result v-if="error" icon="error" :title="error">
+      <template #extra><el-button @click="fetchRules">重试</el-button></template>
+    </el-result>
     <div class="page-container__header">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <h2>积分配置</h2>
         <el-button type="primary" @click="openCreate">添加规则</el-button>
       </div>
     </div>
+
+    <el-alert
+      title="派发模式下，任务积分以创建时各角色设置的积分值为准；此处配置作为全局默认规则/参考。"
+      type="info"
+      show-icon
+      :closable="false"
+      style="margin-bottom: 16px;"
+    />
 
     <el-table :data="rules" v-loading="loading" stripe>
       <el-table-column prop="action" label="动作" min-width="150" />

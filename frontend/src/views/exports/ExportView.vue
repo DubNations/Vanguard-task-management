@@ -5,15 +5,19 @@ import { ElMessage } from 'element-plus'
 
 const loading = ref(false)
 const creating = ref(false)
+const error = ref<string | null>(null)
 const exports = ref<any[]>([])
 const format = ref<'excel' | 'csv'>('excel')
 
 const fetchExports = async () => {
   loading.value = true
+  error.value = null
   try {
     const { data } = await api.get('/exports/')
     exports.value = data.results || data || []
-  } catch {} finally {
+  } catch {
+    error.value = '加载失败，请重试'
+  } finally {
     loading.value = false
   }
 }
@@ -49,6 +53,9 @@ onMounted(fetchExports)
 
 <template>
   <div class="page-container">
+    <el-result v-if="error" icon="error" :title="error">
+      <template #extra><el-button @click="fetchExports">重试</el-button></template>
+    </el-result>
     <div class="page-container__header">
       <h2>任务导出</h2>
     </div>

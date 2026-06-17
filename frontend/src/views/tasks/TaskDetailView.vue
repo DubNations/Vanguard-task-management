@@ -7,7 +7,7 @@ import api from '@/api'
 import { fileApi } from '@/api/modules'
 import { useAuthStore } from '@/stores/auth'
 import { usePermission } from '@/composables/usePermission'
-import { useTaskStatus, STATUS_TRANSITIONS } from '@/composables/useTaskStatus'
+import { useTaskStatus } from '@/composables/useTaskStatus'
 import StatusTag from '@/components/StatusTag.vue'
 import PriorityTag from '@/components/PriorityTag.vue'
 import { formatDateTime, formatDate, formatFileSize } from '@/utils/format'
@@ -26,15 +26,35 @@ const files = ref<any[]>([])
 const loading = ref(true)
 const newComment = ref('')
 const claimLoading = ref(false)
+const completeLoading = ref(false)
 
 const transitions = computed(() => {
   if (!task.value) return []
   return getAvailableTransitions(task.value.status)
 })
 
+const isAssignedMode = computed(() => task.value?.task_mode === 'ASSIGNED')
+const isClaimMode = computed(() => task.value?.task_mode === 'FREE_CLAIM' || task.value?.task_mode === 'FIXED_CLAIM')
+
 const canClaim = computed(() => {
   if (!task.value) return false
-  return task.value.status === 'PENDING' && !task.value.assignee
+  return isClaimMode.value
+    && task.value.status === 'PENDING'
+    && !task.value.participants?.some((p: any) => p.user === authStore.user?.id)
+})
+
+const canCompleteAsChiefLead = computed(() => {
+  if (!task.value || !isAssignedMode.value) return false
+  if (task.value.status !== 'IN_REVIEW') return false
+  if (authStore.user?.is_superuser || authStore.user?.role === 'LEADER' || authStore.user?.role === 'ADMIN') return true
+  return task.value.participants?.some(
+    (p: any) => p.user === authStore.user?.id && p.role === 'CHIEF_LEAD'
+  )
+})
+
+const currentUserParticipant = computed(() => {
+  if (!task.value) return null
+  return task.value.participants?.find((p: any) => p.user === authStore.user?.id)
 })
 
 const fetchTask = async () => {
@@ -92,6 +112,24 @@ const handleTransition = async (targetStatus: string) => {
   }
 }
 
+const handleCompleteParticipant = async (participantId: string) => {
+  completeLoading.value = true
+  try {
+    await ElMessageBox.confirm('确认该领取人已完成任务？将为其发放积分。', '确认完成', {
+      confirmButtonText: '确认',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    await api.post(`/tasks/${route.params.id}/participants/${participantId}/complete/`)
+    ElMessage.success('已确认完成，积分已发放')
+    await fetchTask()
+  } catch {
+    // cancelled or error
+  } finally {
+    completeLoading.value = false
+  }
+}
+
 const addComment = async () => {
   if (!newComment.value.trim()) return
   try {
@@ -108,7 +146,6 @@ const handleUpload = async (options: any) => {
   try {
     await fileApi.upload(route.params.id as string, options.file)
     ElMessage.success('文件上传成功')
-    // 刷新文件列表
     const filesRes = await fileApi.list(route.params.id as string)
     files.value = filesRes.data.results || filesRes.data || []
     options.onSuccess()
@@ -151,7 +188,7 @@ onMounted(fetchTask)
 
 <template>
   <div class="page-container" v-loading="loading">
-    <template v-if="task">
+        <template v-if="task">
       <!-- Overdue alert -->
       <el-alert
         v-if="task.is_overdue"
@@ -166,14 +203,21 @@ onMounted(fetchTask)
         <div>
           <h2>{{ task.title }}</h2>
           <span style="color: #909399; font-size: 13px;">{{ task.task_no }}</span>
+          <el-tag size="small" style="margin-left: 8px;" :type="isAssignedMode ? 'info' : 'warning'">
+            {{ task.task_mode_display }}
+          </el-tag>
         </div>
         <div style="display: flex; gap: 8px;">
-          <!-- 领取任务按钮 -->
+          <!-- 揭榜领取按钮 -->
           <el-button v-if="canClaim" type="primary" :loading="claimLoading" @click="handleClaim">
             领取任务
           </el-button>
-          <!-- 状态转换按钮 -->
-          <template v-if="canTransition(task)">
+          <!-- 派发模式总牵头人完成按钮 -->
+          <el-button v-if="canCompleteAsChiefLead" type="success" :loading="completeLoading" @click="handleTransition('COMPLETED')">
+            完成任务（全团队发分）
+          </el-button>
+          <!-- 普通状态转换按钮 -->
+          <template v-if="canTransition(task) && !canCompleteAsChiefLead">
             <el-button
               v-for="t in transitions"
               :key="t.value"
@@ -197,6 +241,11 @@ onMounted(fetchTask)
               <el-descriptions-item label="优先级">
                 <PriorityTag :priority="task.priority" />
               </el-descriptions-item>
+              <el-descriptions-item label="任务模式">
+                <el-tag size="small" :type="isAssignedMode ? 'info' : 'warning'">
+                  {{ task.task_mode_display }}
+                </el-tag>
+              </el-descriptions-item>
               <el-descriptions-item label="负责人">{{ task.assignee_name || '未分配' }}</el-descriptions-item>
               <el-descriptions-item label="创建人">{{ task.creator_name }}</el-descriptions-item>
               <el-descriptions-item label="进度">
@@ -218,6 +267,74 @@ onMounted(fetchTask)
               </el-descriptions-item>
               <el-descriptions-item label="描述" :span="2">{{ task.description || '暂无' }}</el-descriptions-item>
             </el-descriptions>
+          </el-card>
+
+          <!-- ===== 派发模式 — 参与者卡片 ===== -->
+          <el-card v-if="isAssignedMode && task.participants?.length" shadow="hover" style="margin-bottom: 20px;">
+            <template #header>
+              <span>团队参与者 ({{ task.participants.length }}人)</span>
+            </template>
+            <el-table :data="task.participants" stripe size="small">
+              <el-table-column prop="user_name" label="姓名" width="120" />
+              <el-table-column prop="role_display" label="角色" width="120">
+                <template #default="{ row }">
+                  <el-tag
+                    :type="row.role === 'CHIEF_LEAD' ? 'danger' : row.role === 'GROUP_LEAD' ? 'warning' : 'info'"
+                    size="small"
+                  >
+                    {{ row.role_display }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="points" label="积分" width="80" align="center" />
+              <el-table-column prop="status_display" label="状态" width="100">
+                <template #default="{ row }">
+                  <el-tag
+                    :type="row.status === 'COMPLETED' ? 'success' : row.status === 'ACCEPTED' ? 'primary' : 'info'"
+                    size="small"
+                  >
+                    {{ row.status_display }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-card>
+
+          <!-- ===== 揭榜模式 — 领取人卡片 ===== -->
+          <el-card v-if="isClaimMode && task.participants?.length" shadow="hover" style="margin-bottom: 20px;">
+            <template #header>
+              <span>
+                已领取 ({{ task.current_claimers }}{{ task.max_claimers ? `/${task.max_claimers}` : '' }}人)
+              </span>
+            </template>
+            <el-table :data="task.participants" stripe size="small">
+              <el-table-column prop="user_name" label="姓名" width="120" />
+              <el-table-column prop="status_display" label="状态" width="100">
+                <template #default="{ row }">
+                  <el-tag
+                    :type="row.status === 'COMPLETED' ? 'success' : 'primary'"
+                    size="small"
+                  >
+                    {{ row.status_display }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="points" label="积分" width="80" align="center" />
+              <el-table-column label="操作" width="120" align="center">
+                <template #default="{ row }">
+                  <el-button
+                    v-if="row.status !== 'COMPLETED' && (authStore.user?.is_superuser || authStore.user?.role === 'LEADER' || authStore.user?.role === 'ADMIN' || task.creator === authStore.user?.id)"
+                    size="small"
+                    type="success"
+                    @click="handleCompleteParticipant(row.id)"
+                    :loading="completeLoading"
+                  >
+                    确认完成
+                  </el-button>
+                  <span v-else-if="row.status === 'COMPLETED'" style="color: #67C23A; font-size: 12px;">已完成</span>
+                </template>
+              </el-table-column>
+            </el-table>
           </el-card>
 
           <!-- Comments -->

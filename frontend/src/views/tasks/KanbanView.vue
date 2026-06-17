@@ -8,6 +8,7 @@ import { formatDate } from '@/utils/format'
 
 const router = useRouter()
 const loading = ref(true)
+const error = ref<string | null>(null)
 const columns = ref<Record<string, any>>({})
 
 const statusOrder = ['PENDING', 'IN_PROGRESS', 'IN_REVIEW', 'COMPLETED', 'REJECTED']
@@ -18,11 +19,12 @@ const statusColors: Record<string, string> = {
 
 const fetchKanban = async () => {
   loading.value = true
+  error.value = null
   try {
     const { data } = await api.get('/tasks/kanban/')
     columns.value = data
   } catch {
-    // handled by interceptor
+    error.value = '加载失败，请重试'
   } finally {
     loading.value = false
   }
@@ -43,6 +45,9 @@ onMounted(fetchKanban)
     </div>
 
     <div class="kanban-board" v-loading="loading">
+      <el-result v-if="error" icon="error" :title="error">
+        <template #extra><el-button @click="fetchKanban">重试</el-button></template>
+      </el-result>
       <div v-for="status in statusOrder" :key="status" class="kanban-column">
         <div class="kanban-column__header" :style="{ borderTopColor: statusColors[status] }">
           <div style="display:flex; align-items:center; gap:8px;">
@@ -61,10 +66,15 @@ onMounted(fetchKanban)
             <div class="kanban-card__title">{{ task.title }}</div>
             <div class="kanban-card__tags">
               <PriorityTag :priority="task.priority" />
+              <el-tag size="small" :type="task.task_mode === 'ASSIGNED' ? 'info' : 'warning'" style="margin-left:4px;">
+                {{ task.task_mode === 'ASSIGNED' ? '派发' : task.task_mode === 'FREE_CLAIM' ? '自由揭榜' : '固定揭榜' }}
+              </el-tag>
             </div>
             <div class="kanban-card__meta">
               <span>{{ task.task_no }}</span>
-              <span v-if="task.assignee_name">{{ task.assignee_name }}</span>
+              <el-tag v-if="task.task_mode === 'FREE_CLAIM' || task.task_mode === 'FIXED_CLAIM'" size="small" type="warning" style="margin-left:4px;">
+                已领取 {{ task.current_claimers }}{{ task.max_claimers ? `/${task.max_claimers}` : '' }}人
+              </el-tag>
             </div>
             <div class="kanban-card__deadline" v-if="task.deadline">
               <span :style="{ color: task.is_overdue ? '#f56c6c' : '#909399', fontWeight: task.is_overdue ? '600' : '400' }">

@@ -4,6 +4,7 @@ import api from '@/api'
 import { timeAgo, formatDateTime } from '@/utils/format'
 
 const loading = ref(true)
+const error = ref<string | null>(null)
 const logs = ref<any[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -57,6 +58,7 @@ const actionLabelMap: Record<string, string> = {
 
 const fetchLogs = async () => {
   loading.value = true
+  error.value = null
   try {
     const params: any = { page: page.value, page_size: pageSize }
     if (filters.action) params.action = filters.action
@@ -68,7 +70,7 @@ const fetchLogs = async () => {
     logs.value = data.results || []
     total.value = data.count || 0
   } catch {
-    // handled by interceptor
+    error.value = '加载失败，请重试'
   } finally {
     loading.value = false
   }
@@ -95,6 +97,9 @@ onMounted(fetchLogs)
 
 <template>
   <div class="page-container">
+    <el-result v-if="error" icon="error" :title="error">
+      <template #extra><el-button @click="fetchLogs">重试</el-button></template>
+    </el-result>
     <div class="page-container__header">
       <h2>审计日志</h2>
     </div>

@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 
 const loading = ref(true)
+const error = ref<string | null>(null)
 const teams = ref<any[]>([])
 const dialogVisible = ref(false)
 const dialogTitle = ref('创建团队')
@@ -25,10 +26,13 @@ const users = ref<any[]>([])
 
 const fetchTeams = async () => {
   loading.value = true
+  error.value = null
   try {
     const { data } = await api.get('/auth/teams/')
     teams.value = data.results || data || []
-  } catch {} finally {
+  } catch {
+    error.value = '加载失败，请重试'
+  } finally {
     loading.value = false
   }
 }
@@ -99,6 +103,9 @@ onMounted(() => {
 
 <template>
   <div class="page-container">
+    <el-result v-if="error" icon="error" :title="error">
+      <template #extra><el-button @click="fetchTeams">重试</el-button></template>
+    </el-result>
     <div class="page-container__header">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <h2>团队管理</h2>

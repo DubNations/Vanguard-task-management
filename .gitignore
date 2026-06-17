@@ -53,6 +53,8 @@ pnpm-debug.log*
 .env.local
 .env.*.local
 deploy/.env.prod
+deploy/.env.dev
+deploy/.env.dev
 
 # IDE
 .vscode/

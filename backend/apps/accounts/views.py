@@ -3,12 +3,16 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 
+import logging
+
 from common.permissions import IsSuperAdmin, IsGroupLeader
 from .models import User, Team
 from .serializers import (
     UserListSerializer, UserDetailSerializer, UserCreateSerializer,
     UserProfileUpdateSerializer, ChangePasswordSerializer, TeamSerializer,
 )
+
+logger = logging.getLogger('audit')
 
 
 class LoginView(views.APIView):
@@ -50,13 +54,15 @@ class LogoutView(views.APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        import logging
+        logger = logging.getLogger('audit')
         try:
             refresh_token = request.data.get('refresh')
             if refresh_token:
                 token = RefreshToken(refresh_token)
                 token.blacklist()
         except Exception:
-            pass
+            logger.warning('Token blacklist failed during logout', exc_info=True)
         return Response({'detail': '已登出'}, status=status.HTTP_200_OK)
 
 
@@ -114,7 +120,9 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
     def get_serializer_class(self):
         if self.request.user.is_superuser or self.request.user.role == 'LEADER':
             return UserDetailSerializer
-        if self.request.user == self.get_object():
+        # Avoid extra query: compare PK from URL instead of calling get_object()
+        target_pk = self.kwargs.get('pk')
+        if str(self.request.user.pk) == str(target_pk):
             return UserDetailSerializer
         return UserListSerializer
 

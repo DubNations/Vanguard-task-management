@@ -1,3 +1,11 @@
+import logging
+
+try:
+    import magic
+    MAGIC_AVAILABLE = True
+except (ImportError, OSError):
+    MAGIC_AVAILABLE = False
+
 from django.urls import path
 from rest_framework import status
 from rest_framework.views import APIView
@@ -9,8 +17,32 @@ from urllib.parse import quote
 
 from .models import TaskFile
 
+logger = logging.getLogger(__name__)
+
 # 危险扩展名黑名单
 DANGEROUS_EXTENSIONS = {'.exe', '.bat', '.sh', '.php', '.ps1', '.cmd', '.vbs', '.msi'}
+
+# 允许的 MIME 类型白名单
+ALLOWED_MIMETYPES = {
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/zip',
+    'application/x-rar-compressed',
+    'application/x-7z-compressed',
+    'text/plain',
+    'text/csv',
+    'text/markdown',
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'image/svg+xml',
+}
 
 
 def _check_task_permission(task, user):
@@ -47,6 +79,19 @@ class FileUploadView(APIView):
         ext = '.' + uploaded.name.rsplit('.', 1)[-1].lower() if '.' in uploaded.name else ''
         if ext in DANGEROUS_EXTENSIONS:
             return Response({'error': f'不允许上传 {ext} 格式的文件'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # MIME 类型检测（读取文件头部，不依赖扩展名）
+        if MAGIC_AVAILABLE:
+            header = uploaded.read(2048)
+            uploaded.seek(0)
+            detected_mime = magic.from_buffer(header, mime=True)
+            if detected_mime not in ALLOWED_MIMETYPES:
+                logger.warning('MIME 类型被拒绝: file=%s detected=%s user=%s',
+                               uploaded.name, detected_mime, request.user.pk)
+                return Response(
+                    {'error': f'不允许上传该类型的文件 ({detected_mime})'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         # 50MB limit
         if uploaded.size > 50 * 1024 * 1024:
@@ -115,8 +160,8 @@ class FileDownloadView(APIView):
         if not _check_task_permission(task_file.task, request.user):
             raise PermissionDenied('您无权下载此文件')
 
-        task_file.download_count += 1
-        task_file.save(update_fields=['download_count'])
+        from django.db.models import F
+        TaskFile.objects.filter(pk=pk).update(download_count=F('download_count') + 1)
 
         response = FileResponse(task_file.file.open('rb'))
         # 使用 urllib.parse.quote 防止 HTTP 头注入

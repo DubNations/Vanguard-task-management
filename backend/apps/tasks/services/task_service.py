@@ -1,10 +1,11 @@
-import uuid
-from datetime import datetime
-
+import logging
+from django.db import transaction, IntegrityError
 from django.utils import timezone
 
-from apps.tasks.models import Task, TaskHistory
+from apps.tasks.models import Task, TaskHistory, TaskParticipant
 from apps.notifications.models import Notification
+
+logger = logging.getLogger('apps')
 
 
 class TaskService:
@@ -13,33 +14,81 @@ class TaskService:
     @staticmethod
     def generate_task_no():
         """生成任务编号: TASK-YYYYMMDD-XXXX。"""
+        from django.db import transaction
         now = timezone.now()
         prefix = now.strftime('TASK-%Y%m%d')
-        # Find latest
-        last = Task.objects.filter(task_no__startswith=prefix).order_by('-task_no').first()
-        if last:
-            seq = int(last.task_no.split('-')[-1]) + 1
-        else:
-            seq = 1
-        return f'{prefix}-{seq:04d}'
+        with transaction.atomic():
+            last = Task.objects.filter(
+                task_no__startswith=prefix
+            ).order_by('-task_no').select_for_update().first()
+            if last:
+                seq = int(last.task_no.split('-')[-1]) + 1
+            else:
+                seq = 1
+            return f'{prefix}-{seq:04d}'
 
     @staticmethod
     def create_task(data, user):
-        """创建任务并记录历史。"""
-        task_no = TaskService.generate_task_no()
-        task = Task.objects.create(
-            task_no=task_no,
-            title=data['title'],
-            description=data.get('description', ''),
-            priority=data.get('priority', Task.Priority.MEDIUM),
-            deadline=data.get('deadline'),
-            assignee=data.get('assignee'),
-            reviewer=data.get('reviewer'),
-            creator=user,
-            tags=data.get('tags', []),
-            custom_fields=data.get('custom_fields', {}),
-            reward_points=data.get('reward_points', 0),
-        )
+        """创建任务并记录历史（支持三种模式）。"""
+        task_mode = data.get('task_mode', Task.TaskMode.ASSIGNED)
+        participants_data = data.get('participants', [])
+
+        # Mode-level validation
+        if task_mode == Task.TaskMode.FREE_CLAIM:
+            if data.get('reward_points', 0) <= 0:
+                raise ValueError('揭榜挂帅模式必须设置积分')
+        elif task_mode == Task.TaskMode.FIXED_CLAIM:
+            if data.get('reward_points', 0) <= 0:
+                raise ValueError('揭榜挂帅模式必须设置积分')
+            if not data.get('max_claimers'):
+                raise ValueError('固定揭榜必须设置名额数')
+        elif task_mode == Task.TaskMode.ASSIGNED and participants_data:
+            chief_leads = [p for p in participants_data if p.get('role') == TaskParticipant.Role.CHIEF_LEAD]
+            if not chief_leads:
+                raise ValueError('派发模式必须指定至少一名总牵头人')
+
+        for _retry in range(5):
+            try:
+                task_no = TaskService.generate_task_no()
+                task = Task.objects.create(
+                    task_no=task_no,
+                    title=data['title'],
+                    description=data.get('description', ''),
+                    priority=data.get('priority', Task.Priority.MEDIUM),
+                    deadline=data.get('deadline'),
+                    assignee=data.get('assignee'),
+                    reviewer=data.get('reviewer'),
+                    creator=user,
+                    tags=data.get('tags', []),
+                    custom_fields=data.get('custom_fields', {}),
+                    reward_points=data.get('reward_points', 0),
+                    task_mode=task_mode,
+                    max_claimers=data.get('max_claimers'),
+                )
+                break
+            except IntegrityError:
+                if _retry == 4:
+                    raise
+                logger.warning('任务编号 %s 冲突，重试 (%d/5)', task_no, _retry + 1)
+                continue
+
+        # 按模式处理参与者
+        if task_mode == Task.TaskMode.ASSIGNED and participants_data:
+            TaskService._create_assigned_participants(task, participants_data, user)
+
+        # 通知 assignee（非参与者模式下直接分配）
+        if task.assignee and task.assignee != user and not participants_data:
+            try:
+                Notification.objects.create(
+                    recipient=task.assignee,
+                    type=Notification.Type.TASK_ASSIGNED,
+                    title=f'您有新任务: {task.title}',
+                    content=f'任务编号: {task.task_no}，创建人: {user.display_name}',
+                    task=task,
+                    actor=user,
+                )
+            except Exception:
+                logger.warning('Failed to create TASK_ASSIGNED notification for task %s', task.task_no, exc_info=True)
 
         TaskHistory.objects.create(
             task=task,
@@ -48,30 +97,45 @@ class TaskService:
             new_value={
                 'title': task.title,
                 'priority': task.priority,
+                'task_mode': task_mode,
                 'assignee': str(task.assignee_id) if task.assignee_id else None,
                 'deadline': task.deadline.isoformat() if task.deadline else None,
             },
-            note='任务创建',
+            note=f'任务创建（{task.get_task_mode_display()}模式）',
         )
 
-        # 通知被分配的人 + 积分奖励
-        if task.assignee and task.assignee != user:
-            Notification.objects.create(
-                recipient=task.assignee,
-                type=Notification.Type.TASK_ASSIGNED,
-                title=f'您有新任务: {task.title}',
-                content=f'任务编号: {task.task_no}，创建人: {user.display_name}',
-                task=task,
-                actor=user,
-            )
-            # 积分触发：被分配任务
-            try:
-                from apps.points.services.point_service import PointService
-                PointService.award(task.assignee, task, 'TASK_ASSIGNED', '被分配新任务')
-            except Exception:
-                pass  # 积分系统异常不影响核心流程
-
         return task
+
+    @staticmethod
+    def _create_assigned_participants(task, participants_data, creator):
+        """派发模式：批量创建参与者并发送通知。"""
+        for p_data in participants_data:
+            user_id = p_data['user_id']
+            role = p_data['role']
+            points = p_data['points']
+
+            participant = TaskParticipant.objects.create(
+                task=task,
+                user_id=user_id,
+                role=role,
+                points=points,
+                status=TaskParticipant.Status.INVITED,
+            )
+
+            # 通知参与者
+            try:
+                from apps.accounts.models import User
+                recipient = User.objects.get(pk=user_id)
+                Notification.objects.create(
+                    recipient=recipient,
+                    type=Notification.Type.TASK_ASSIGNED,
+                    title=f'您被分配了任务: {task.title}',
+                    content=f'任务编号: {task.task_no}，角色: {participant.get_role_display()}，积分: {points}',
+                    task=task,
+                    actor=creator,
+                )
+            except Exception:
+                logger.warning('通知发送失败: task=%s user=%s', task.task_no, user_id)
 
     @staticmethod
     def transition_status(task, new_status, user, note=''):
@@ -118,15 +182,52 @@ class TaskService:
                 actor=user,
             )
 
-        # 积分触发：完成任务
-        if new_status == Task.Status.COMPLETED and task.assignee:
-            try:
-                from apps.points.services.point_service import PointService
-                PointService.award(task.assignee, task, 'TASK_COMPLETED', '完成任务')
-            except Exception:
-                pass
+        # ===== 派发模式完成：批量发放全团队积分 =====
+        if (new_status == Task.Status.COMPLETED
+                and task.task_mode == Task.TaskMode.ASSIGNED):
+            TaskService._batch_award_on_completed(task, user)
+
+        # ===== 揭榜模式完成（仅记录，积分由管理员逐个判定） =====
+        # FREE_CLAIM / FIXED_CLAIM 的积分在 TaskParticipantCompleteView 中发放
 
         return task
+
+    @staticmethod
+    def _batch_award_on_completed(task, actor):
+        """派发模式：总牵头人完成任务后，批量发放全团队积分。"""
+        from apps.points.services.point_service import PointService
+
+        participants = task.participants.filter(
+            status__in=[TaskParticipant.Status.ACCEPTED, TaskParticipant.Status.COMPLETED]
+        )
+
+        for p in participants:
+            try:
+                PointService.award(
+                    p.user, task,
+                    action='TASK_COMPLETED',
+                    points=p.points,
+                    reason=f'[派发] {task.task_no} {p.get_role_display()}完成',
+                )
+                p.status = TaskParticipant.Status.COMPLETED
+                p.completed_at = timezone.now()
+                p.save(update_fields=['status', 'completed_at'])
+            except Exception:
+                logger.error('积分发放失败: task=%s user=%s', task.task_no, p.user_id)
+
+        # 通知所有参与者
+        for p in participants:
+            try:
+                Notification.objects.create(
+                    recipient=p.user,
+                    type=Notification.Type.TASK_STATUS,
+                    title=f'任务已完成: {task.title}',
+                    content=f'积分 {p.points} 已发放',
+                    task=task,
+                    actor=actor,
+                )
+            except Exception:
+                logger.warning('通知发送失败: task=%s user=%s', task.task_no, p.user_id, exc_info=True)
 
     @staticmethod
     def update_task(task, data, user):
@@ -143,7 +244,6 @@ class TaskService:
             old_val = getattr(task, field)
             new_val = data[field]
 
-            # Skip if same
             if str(old_val) == str(new_val):
                 continue
 

@@ -40,18 +40,31 @@ export const useNotificationStore = defineStore('notifications', {
     },
 
     async markRead(id: string) {
-      await api.post(`/notifications/${id}/read/`)
       const n = this.notifications.find((n) => n.id === id)
-      if (n && !n.is_read) {
+      if (!n || n.is_read) return
+      const wasRead = n.is_read
+      const prevCount = this.unreadCount
+      try {
+        await api.post(`/notifications/${id}/read/`)
         n.is_read = true
         this.unreadCount = Math.max(0, this.unreadCount - 1)
+      } catch {
+        n.is_read = wasRead
+        this.unreadCount = prevCount
       }
     },
 
     async markAllRead() {
-      await api.post('/notifications/mark-all-read/')
-      this.notifications.forEach((n) => (n.is_read = true))
-      this.unreadCount = 0
+      const prevState = this.notifications.map((n) => ({ ...n }))
+      const prevCount = this.unreadCount
+      try {
+        await api.post('/notifications/mark-all-read/')
+        this.notifications.forEach((n) => (n.is_read = true))
+        this.unreadCount = 0
+      } catch {
+        this.notifications.forEach((n, i) => (n.is_read = prevState[i].is_read))
+        this.unreadCount = prevCount
+      }
     },
   },
 })

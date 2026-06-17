@@ -10,10 +10,13 @@ class LoginRateThrottle(AnonRateThrottle):
     """登录接口限速：10次/分钟。"""
     scope = 'login'
 
+    def allow_request(self, request, view):
+        if not (request.path.endswith('/login/') or request.path.endswith('/token/')):
+            return True
+        return super().allow_request(request, view)
+
     def get_cache_key(self, request, view):
-        if request.path.endswith('/login/') or request.path.endswith('/token/'):
-            return self.cache_format % {
-                'scope': self.scope,
-                'ident': self.get_ident(request),
-            }
-        return None
+        return self.cache_format % {
+            'scope': self.scope,
+            'ident': self.get_ident(request),
+        }

@@ -3,6 +3,7 @@ import { ref, onMounted, watch } from 'vue'
 import api from '@/api'
 
 const loading = ref(true)
+const error = ref<string | null>(null)
 const myStats = ref<any>({})
 const leaderboard = ref<any[]>([])
 const period = ref<'week' | 'month' | 'all'>('week')
@@ -16,10 +17,13 @@ const medalMap: Record<number, string> = {
 
 const fetchMyStats = async () => {
   loading.value = true
+  error.value = null
   try {
     const { data } = await api.get('/points/my-stats/')
     myStats.value = data
-  } catch {} finally {
+  } catch {
+    error.value = '加载失败，请重试'
+  } finally {
     loading.value = false
   }
 }
@@ -43,6 +47,9 @@ onMounted(() => {
 
 <template>
   <div class="page-container" v-loading="loading">
+    <el-result v-if="error" icon="error" :title="error">
+      <template #extra><el-button @click="fetchMyStats">重试</el-button></template>
+    </el-result>
     <div class="page-container__header">
       <h2>积分排行</h2>
     </div>
