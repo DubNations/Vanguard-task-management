@@ -24,6 +24,9 @@ const toggleCollapse = () => {
 const menuItems = [
   { index: '/', icon: 'DataAnalysis', label: '工作台' },
   { index: '/tasks', icon: 'List', label: '任务管理' },
+  { index: '/tasks/kanban', icon: 'Grid', label: '看板视图' },
+  { index: '/tasks/timeline', icon: 'Clock', label: '时间线' },
+  { index: '/tasks/calendar', icon: 'Calendar', label: '日历视图' },
   { index: '/points', icon: 'Trophy', label: '积分排行' },
   { index: '/imports', icon: 'Upload', label: '任务导入' },
   { index: '/exports', icon: 'Download', label: '任务导出' },

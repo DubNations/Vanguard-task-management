@@ -34,6 +34,18 @@ const router = createRouter({
           meta: { title: '看板视图' },
         },
         {
+          path: 'tasks/timeline',
+          name: 'Timeline',
+          component: () => import('@/views/tasks/TimelineView.vue'),
+          meta: { title: '时间线' },
+        },
+        {
+          path: 'tasks/calendar',
+          name: 'Calendar',
+          component: () => import('@/views/tasks/CalendarView.vue'),
+          meta: { title: '日历视图' },
+        },
+        {
           path: 'tasks/:id',
           name: 'TaskDetail',
           component: () => import('@/views/tasks/TaskDetailView.vue'),
