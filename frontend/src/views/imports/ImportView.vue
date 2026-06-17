@@ -3,7 +3,6 @@ import { ref } from 'vue'
 import api from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
-const uploadRef = ref()
 const uploading = ref(false)
 const previewData = ref<any[]>([])
 const sessionId = ref('')
@@ -49,7 +48,6 @@ const handleConfirm = async () => {
     <el-card shadow="hover">
       <template #header><span>上传文件</span></template>
       <el-upload
-        ref="uploadRef"
         drag
         action=""
         :auto-upload="false"

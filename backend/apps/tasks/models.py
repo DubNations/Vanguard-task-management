@@ -22,6 +22,11 @@ class Task(models.Model):
         HIGH = 'HIGH', '高'
         URGENT = 'URGENT', '紧急'
 
+    class TaskMode(models.TextChoices):
+        ASSIGNED = 'ASSIGNED', '派发'
+        FREE_CLAIM = 'FREE_CLAIM', '自由揭榜'
+        FIXED_CLAIM = 'FIXED_CLAIM', '固定揭榜'
+
     # 合法状态转换
     STATUS_TRANSITIONS = {
         Status.PENDING: [Status.IN_PROGRESS, Status.CANCELLED],
@@ -65,6 +70,15 @@ class Task(models.Model):
     completed_at = models.DateTimeField('完成时间', null=True, blank=True)
 
     # 扩展
+    # 任务模式
+    task_mode = models.CharField(
+        '任务模式', max_length=20, choices=TaskMode.choices,
+        default=TaskMode.ASSIGNED, db_index=True
+    )
+    max_claimers = models.PositiveIntegerField('揭榜名额', null=True, blank=True,
+        help_text='固定揭榜模式下的名额数，null 表示不限')
+    current_claimers = models.PositiveIntegerField('已领取人数', default=0)
+
     tags = models.JSONField('标签', default=list, blank=True)
     custom_fields = models.JSONField('自定义字段', default=dict, blank=True)
     external_id = models.CharField('外部ID(导入用)', max_length=100, blank=True, default='')
@@ -166,3 +180,45 @@ class TaskComment(models.Model):
 
     def __str__(self):
         return f'{self.author.username} on {self.task.task_no}'
+
+
+class TaskParticipant(models.Model):
+    """任务参与者 — 统一承载派发/揭榜两种模式。"""
+
+    class Role(models.TextChoices):
+        CHIEF_LEAD = 'CHIEF_LEAD', '总牵头人'
+        GROUP_LEAD = 'GROUP_LEAD', '小组牵头'
+        PARTICIPANT = 'PARTICIPANT', '参与'
+        CLAIMER = 'CLAIMER', '领取人'
+
+    class Status(models.TextChoices):
+        INVITED = 'INVITED', '已邀请'
+        ACCEPTED = 'ACCEPTED', '已接受'
+        COMPLETED = 'COMPLETED', '已完成'
+        CANCELLED = 'CANCELLED', '已取消'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='participants')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='task_participations', verbose_name='参与者'
+    )
+    role = models.CharField('角色', max_length=20, choices=Role.choices)
+    points = models.IntegerField('该角色积分')
+    status = models.CharField(
+        '状态', max_length=20, choices=Status.choices, default=Status.INVITED
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField('完成时间', null=True, blank=True)
+
+    class Meta:
+        db_table = 'task_participants'
+        verbose_name = '任务参与者'
+        verbose_name_plural = verbose_name
+        unique_together = ('task', 'user')
+        indexes = [
+            models.Index(fields=['task', 'role']),
+        ]
+
+    def __str__(self):
+        return f'{self.user.username} - {self.task.task_no} ({self.get_role_display()})'

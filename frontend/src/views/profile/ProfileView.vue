@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue'
+import { useRoute } from 'vue-router'
 import api from '@/api'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 
-const activeTab = ref('profile')
+const route = useRoute()
+const activeTab = ref((route.query.tab as string) || 'profile')
 const loading = ref(true)
 const profile = ref<any>({})
 const editing = ref(false)

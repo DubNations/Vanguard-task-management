@@ -4,6 +4,8 @@ from .views import (
     TaskTransitionView, TaskProgressView,
     TaskHistoryListView, TaskCommentListView,
     TaskClaimView, KanbanView,
+    TaskParticipantListView, TaskParticipantDetailView,
+    TaskParticipantCompleteView,
 )
 
 urlpatterns = [
@@ -15,4 +17,7 @@ urlpatterns = [
     path('<uuid:pk>/history/', TaskHistoryListView.as_view(), name='task-history'),
     path('<uuid:pk>/comments/', TaskCommentListView.as_view(), name='task-comments'),
     path('<uuid:pk>/claim/', TaskClaimView.as_view(), name='task-claim'),
+    path('<uuid:pk>/participants/', TaskParticipantListView.as_view(), name='task-participants'),
+    path('<uuid:pk>/participants/<uuid:pid>/', TaskParticipantDetailView.as_view(), name='task-participant-detail'),
+    path('<uuid:pk>/participants/<uuid:pid>/complete/', TaskParticipantCompleteView.as_view(), name='task-participant-complete'),
 ]

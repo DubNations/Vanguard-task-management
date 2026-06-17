@@ -37,3 +37,19 @@ class IsReadOnly(permissions.BasePermission):
 
     def has_permission(self, request, view):
         return request.method in permissions.SAFE_METHODS
+
+
+class IsChiefLeadOrOwner(permissions.BasePermission):
+    """派发模式总牵头人、创建人或组长及以上可操作。"""
+
+    def has_object_permission(self, request, view, obj):
+        if request.user.is_superuser or request.user.role in ('LEADER', 'ADMIN'):
+            return True
+        task = obj if hasattr(obj, 'participants') else obj.task
+        if hasattr(task, 'creator') and task.creator == request.user:
+            return True
+        return task.participants.filter(
+            user=request.user,
+            role='CHIEF_LEAD',
+            status__in=['ACCEPTED', 'COMPLETED'],
+        ).exists()
