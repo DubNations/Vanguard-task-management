@@ -46,10 +46,13 @@ ALLOWED_MIMETYPES = {
 
 
 def _check_task_permission(task, user):
-    """校验用户是否有权操作该任务的文件（含参与者）。"""
+    """校验用户是否有权操作该任务的文件（含参与者 + PENDING 任务大厅）。"""
     if user.is_superuser:
         return True
     if user.role in ('LEADER', 'ADMIN'):
+        return True
+    # PENDING 任务对所有登录用户可读（任务大厅）
+    if task.status == 'PENDING':
         return True
     if task.assignee == user or task.creator == user:
         return True

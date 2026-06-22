@@ -306,6 +306,9 @@ class TaskParticipantListView(generics.ListCreateAPIView):
         if not user.is_superuser and user.role not in ('LEADER', 'ADMIN'):
             try:
                 task = Task.objects.get(pk=self.kwargs['pk'])
+                # PENDING 任务大厅：所有登录用户可读
+                if task.status == 'PENDING':
+                    return qs
                 is_related = (
                     task.assignee == user
                     or task.creator == user
@@ -480,6 +483,9 @@ class TaskHistoryListView(generics.ListAPIView):
         if not user.is_superuser and user.role not in ('LEADER', 'ADMIN'):
             try:
                 task = Task.objects.get(pk=self.kwargs['pk'])
+                # PENDING 任务大厅：所有登录用户可读
+                if task.status == 'PENDING':
+                    return qs
                 is_related = (
                     task.assignee == user
                     or task.creator == user
@@ -507,6 +513,9 @@ class TaskCommentListView(generics.ListCreateAPIView):
             # 数据隔离：非相关人员不可查看评论
             try:
                 task = Task.objects.get(pk=self.kwargs['pk'])
+                # PENDING 任务大厅：所有登录用户可读
+                if task.status == 'PENDING':
+                    return qs
                 is_related = (
                     task.assignee == user
                     or task.creator == user

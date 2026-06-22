@@ -18,13 +18,23 @@ class IsGroupLeader(permissions.BasePermission):
 
 
 class IsOwnerOrLeader(permissions.BasePermission):
-    """任务负责人、创建人、参与者或组长及以上可操作。"""
+    """任务负责人、创建人、参与者或组长及以上可操作。
+    PENDING 状态的任务对所有登录用户可读（任务大厅），但仅创建人/组长可编辑。
+    """
 
     def has_object_permission(self, request, view, obj):
         if request.user.is_superuser:
             return True
         if request.user.role in ('LEADER', 'ADMIN'):
             return True
+        # PENDING 任务大厅：所有登录用户可读（GET），编辑仍需权限
+        if hasattr(obj, 'status') and obj.status == 'PENDING':
+            if request.method in permissions.SAFE_METHODS:
+                return True
+            # PUT/PATCH 仅创建人可编辑
+            if hasattr(obj, 'creator') and obj.creator == request.user:
+                return True
+            return False
         if hasattr(obj, 'assignee') and obj.assignee == request.user:
             return True
         if hasattr(obj, 'creator') and obj.creator == request.user:
