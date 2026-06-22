@@ -50,7 +50,7 @@ const router = createRouter({
           name: 'TaskDetail',
           component: () => import('@/views/tasks/TaskDetailView.vue'),
           props: true,
-          meta: { title: '任务详情' },
+          meta: { title: '任务详情', parent: { path: '/tasks', title: '任务管理' } },
         },
         {
           path: 'points',

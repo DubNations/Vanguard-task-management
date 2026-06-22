@@ -13,6 +13,7 @@ const notifStore = useNotificationStore()
 
 const username = computed(() => auth.username)
 const isAdmin = computed(() => auth.isAdmin || auth.isLeader)
+const breadcrumbParent = computed(() => (route.meta as any).parent as { path: string; title: string } | undefined)
 
 const isCollapse = ref(localStorage.getItem('sidebar_collapse') === 'true')
 
@@ -127,6 +128,9 @@ const handleUserCommand = (cmd: string) => {
         <div class="header-left">
           <el-breadcrumb separator="/">
             <el-breadcrumb-item :to="{ path: '/' }">首页</el-breadcrumb-item>
+            <el-breadcrumb-item v-if="breadcrumbParent" :to="{ path: breadcrumbParent.path }">
+              {{ breadcrumbParent.title }}
+            </el-breadcrumb-item>
             <el-breadcrumb-item v-if="route.meta.title">
               {{ route.meta.title }}
             </el-breadcrumb-item>
