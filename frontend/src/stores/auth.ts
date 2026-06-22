@@ -71,6 +71,10 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('access_token')
       localStorage.removeItem('refresh_token')
       localStorage.removeItem('user')
+
+      // 重置 api interceptor 的刷新锁，防止登出后再次登录时请求被挂起
+      const { resetRefreshLock } = await import('@/api')
+      if (typeof resetRefreshLock === 'function') resetRefreshLock()
     },
 
     async fetchMe() {

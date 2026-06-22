@@ -38,8 +38,9 @@ const handleSubmit = async () => {
     const rawRedirect = (route.query.redirect as string) || '/'
     const redirect = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/'
     router.push(redirect)
-  } catch {
-    // Error handled by interceptor
+  } catch (e: any) {
+    const msg = e?.response?.data?.detail || e?.response?.data?.error || e?.message || '登录失败'
+    ElMessage.error(msg)
   } finally {
     loading.value = false
   }

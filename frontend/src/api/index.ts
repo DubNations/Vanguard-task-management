@@ -85,4 +85,9 @@ api.interceptors.response.use(
   }
 )
 
+export const resetRefreshLock = () => {
+  isRefreshing = false
+  failedQueue = []
+}
+
 export default api
