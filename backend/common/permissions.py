@@ -18,7 +18,7 @@ class IsGroupLeader(permissions.BasePermission):
 
 
 class IsOwnerOrLeader(permissions.BasePermission):
-    """任务负责人、创建人或组长及以上可操作。"""
+    """任务负责人、创建人、参与者或组长及以上可操作。"""
 
     def has_object_permission(self, request, view, obj):
         if request.user.is_superuser:
@@ -28,6 +28,10 @@ class IsOwnerOrLeader(permissions.BasePermission):
         if hasattr(obj, 'assignee') and obj.assignee == request.user:
             return True
         if hasattr(obj, 'creator') and obj.creator == request.user:
+            return True
+        # 参与者可操作自己领取的任务（揭榜/派发）
+        task = obj if hasattr(obj, 'participants') else obj
+        if hasattr(task, 'participants') and task.participants.filter(user=request.user).exists():
             return True
         return False
 

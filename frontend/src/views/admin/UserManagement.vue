@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, reactive } from 'vue'
 import api from '@/api'
+import { usePermission } from '@/composables/usePermission'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, MoreFilled } from '@element-plus/icons-vue'
 
+const perm = usePermission()
 const loading = ref(true)
 const error = ref<string | null>(null)
 const users = ref<any[]>([])
@@ -66,6 +68,10 @@ const fetchUsers = async () => {
 }
 
 const toggleUser = async (user: any) => {
+  if (!perm.canToggleUsers()) {
+    ElMessage.warning('仅超管可禁用/启用用户')
+    return
+  }
   const action = user.is_active ? '禁用' : '启用'
   try {
     await ElMessageBox.confirm(`确定${action}用户 ${user.username}？`, '提示', {
@@ -80,6 +86,10 @@ const toggleUser = async (user: any) => {
 }
 
 const resetPassword = async (user: any) => {
+  if (!perm.canToggleUsers()) {
+    ElMessage.warning('仅超管可重置密码')
+    return
+  }
   try {
     const { value: newPassword } = await ElMessageBox.prompt(
       `请输入用户 ${user.username} 的新密码（至少6位）`,
@@ -169,7 +179,7 @@ onMounted(fetchUsers)
           style="width: 260px"
           clearable
         />
-        <el-button type="primary" @click="openCreateDialog">
+        <el-button v-auth="'LEADER'" type="primary" @click="openCreateDialog">
           <el-icon style="margin-right:4px;"><Plus /></el-icon>
           创建用户
         </el-button>
@@ -196,7 +206,7 @@ onMounted(fetchUsers)
       </el-table-column>
       <el-table-column label="操作" width="120">
         <template #default="{ row }">
-          <el-dropdown trigger="click" @command="(cmd: string) => {
+          <el-dropdown v-if="perm.canToggleUsers()" trigger="click" @command="(cmd: string) => {
             if (cmd === 'toggle') toggleUser(row)
             else if (cmd === 'reset') resetPassword(row)
           }">
@@ -214,6 +224,7 @@ onMounted(fetchUsers)
               </el-dropdown-menu>
             </template>
           </el-dropdown>
+          <span v-else style="color: #909399; font-size: 12px;">--</span>
         </template>
       </el-table-column>
     </el-table>

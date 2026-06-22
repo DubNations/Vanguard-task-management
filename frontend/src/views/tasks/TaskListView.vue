@@ -186,6 +186,30 @@ const goToKanban = () => {
   router.push('/tasks/kanban')
 }
 
+// 领取任务
+const claimingId = ref<string | null>(null)
+const handleClaimTask = async (task: any) => {
+  if (task.task_mode === 'ASSIGNED') {
+    ElMessage.warning('派发模式任务不能自由领取')
+    return
+  }
+  try {
+    claimingId.value = task.id
+    await api.post(`/tasks/${task.id}/claim/`)
+    ElMessage.success(`已领取: ${task.title}`)
+    fetchTasks()
+  } catch {
+    // error handled by interceptor
+  } finally {
+    claimingId.value = null
+  }
+}
+
+// 判断当前用户是否已领取某个任务
+const isMyTask = (task: any) => {
+  return task.assignee_name || task.creator_name // simplified: if has assignee/creator displayed
+}
+
 onMounted(fetchTasks)
 </script>
 
@@ -256,6 +280,19 @@ onMounted(fetchTasks)
             <span :style="{ color: row.is_overdue ? '#f56c6c' : '' }">
               {{ row.deadline ? formatDate(row.deadline) : '-' }}
             </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="100" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              v-if="row.status === 'PENDING' && row.task_mode !== 'ASSIGNED'"
+              size="small"
+              type="primary"
+              :loading="claimingId === row.id"
+              @click.stop="handleClaimTask(row)"
+            >
+              领取
+            </el-button>
           </template>
         </el-table-column>
       </el-table>

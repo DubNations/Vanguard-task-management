@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { usePermission } from '@/composables/usePermission'
 import { useNotificationStore } from '@/stores/notification'
 import { ElMessageBox } from 'element-plus'
 import { timeAgo } from '@/utils/format'
@@ -9,10 +10,10 @@ import { timeAgo } from '@/utils/format'
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const perm = usePermission()
 const notifStore = useNotificationStore()
 
 const username = computed(() => auth.username)
-const isAdmin = computed(() => auth.isAdmin || auth.isLeader)
 const breadcrumbParent = computed(() => (route.meta as any).parent as { path: string; title: string } | undefined)
 
 const isCollapse = ref(localStorage.getItem('sidebar_collapse') === 'true')
@@ -22,23 +23,35 @@ const toggleCollapse = () => {
   localStorage.setItem('sidebar_collapse', String(isCollapse.value))
 }
 
-const menuItems = [
-  { index: '/', icon: 'DataAnalysis', label: '工作台' },
-  { index: '/tasks', icon: 'List', label: '任务管理' },
-  { index: '/tasks/kanban', icon: 'Grid', label: '看板视图' },
-  { index: '/tasks/timeline', icon: 'Clock', label: '时间线' },
-  { index: '/tasks/calendar', icon: 'Calendar', label: '日历视图' },
-  { index: '/points', icon: 'Trophy', label: '积分排行' },
-  { index: '/imports', icon: 'Upload', label: '任务导入' },
-  { index: '/exports', icon: 'Download', label: '任务导出' },
-]
+// 普通菜单项 — 根据路由 minRole 动态过滤
+const menuItems = computed(() => {
+  const all = [
+    { index: '/', icon: 'DataAnalysis', label: '工作台', minRole: undefined },
+    { index: '/tasks', icon: 'List', label: '任务管理', minRole: undefined },
+    { index: '/tasks/kanban', icon: 'Grid', label: '看板视图', minRole: undefined },
+    { index: '/tasks/timeline', icon: 'Clock', label: '时间线', minRole: undefined },
+    { index: '/tasks/calendar', icon: 'Calendar', label: '日历视图', minRole: undefined },
+    { index: '/points', icon: 'Trophy', label: '积分排行', minRole: undefined },
+    { index: '/imports', icon: 'Upload', label: '任务导入', minRole: 'LEADER' },
+    { index: '/exports', icon: 'Download', label: '任务导出', minRole: undefined },
+  ]
+  if (!auth.user) return []
+  return all.filter(item => perm.hasRole(item.minRole as any || 'MEMBER'))
+})
 
-const adminItems = [
-  { index: '/admin/teams', icon: 'OfficeBuilding', label: '团队管理' },
-  { index: '/admin/users', icon: 'User', label: '用户管理' },
-  { index: '/admin/audit', icon: 'Document', label: '操作日志' },
-  { index: '/admin/points', icon: 'Setting', label: '积分配置' },
-]
+// 管理后台菜单项 — 每个菜单对应独立的权限函数
+const adminItems = computed(() => {
+  if (!auth.user) return []
+  const items = [
+    { index: '/admin/users', icon: 'User', label: '用户管理', visible: perm.canManageUsers() },
+    { index: '/admin/audit', icon: 'Document', label: '操作日志', visible: perm.canViewAuditLog() },
+    { index: '/admin/teams', icon: 'OfficeBuilding', label: '团队管理', visible: perm.canManageTeams() },
+    { index: '/admin/points', icon: 'Setting', label: '积分配置', visible: perm.canManagePointsConfig() },
+  ]
+  return items.filter(item => item.visible)
+})
+
+const hasAdminMenu = computed(() => adminItems.value.length > 0)
 
 // 通知
 const showNotif = ref(false)
@@ -86,7 +99,7 @@ const handleUserCommand = (cmd: string) => {
           <template #title>{{ item.label }}</template>
         </el-menu-item>
 
-        <template v-if="isAdmin">
+        <template v-if="hasAdminMenu">
           <el-sub-menu index="admin-group" v-if="!isCollapse">
             <template #title>
               <el-icon><Setting /></el-icon>

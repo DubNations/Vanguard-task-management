@@ -40,7 +40,7 @@ class TaskListView(generics.ListCreateAPIView):
             participants_count=Count('participants', distinct=True),
         )
 
-        # 数据隔离：非组长以上只看自己的任务（包括参与的任务）
+        # 数据隔离：非组长以上只看自己的任务 + 所有可领取的公共任务
         user = self.request.user
         if not user.is_superuser and user.role not in ('LEADER', 'ADMIN'):
             participation_exists = Exists(
@@ -48,9 +48,13 @@ class TaskListView(generics.ListCreateAPIView):
                     task=OuterRef('pk'), user=user
                 )
             )
+            # MEMBER 可见：自己的任务 + 所有 PENDING/揭榜任务（任务大厅）
             qs = qs.filter(
-                Q(assignee=user) | Q(creator=user) | participation_exists
-            )
+                Q(assignee=user)
+                | Q(creator=user)
+                | participation_exists
+                | Q(status=Task.Status.PENDING)
+            ).distinct()
 
         # 筛选参数
         params = self.request.query_params
@@ -186,11 +190,14 @@ class TaskProgressView(views.APIView):
 
 
 class TaskClaimView(views.APIView):
-    """揭榜挂帅 — 任务领取 API（支持自由揭榜 + 固定揭榜）。"""
+    """揭榜挂帅 — 任务领取 API（支持自由揭榜 + 固定揭榜）。
+    领取后自动将 PENDING 转为 IN_PROGRESS。
+    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
         from django.db import transaction
+        from django.utils import timezone as tz
 
         with transaction.atomic():
             try:
@@ -202,6 +209,10 @@ class TaskClaimView(views.APIView):
             if task.task_mode not in (Task.TaskMode.FREE_CLAIM, Task.TaskMode.FIXED_CLAIM):
                 return Response({'error': '该任务非揭榜模式'}, status=status.HTTP_400_BAD_REQUEST)
 
+            # 必须是 PENDING 状态才能领取
+            if task.status != Task.Status.PENDING:
+                return Response({'error': '该任务当前状态不可领取'}, status=status.HTTP_400_BAD_REQUEST)
+
             # 创建人不能领取自己创建的任务
             if task.creator == request.user:
                 return Response({'error': '不能领取自己创建的任务'}, status=status.HTTP_400_BAD_REQUEST)
@@ -210,25 +221,42 @@ class TaskClaimView(views.APIView):
             if TaskParticipant.objects.filter(task=task, user=request.user).exists():
                 return Response({'error': '您已领取过该任务'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 固定揭榜：名额校验
+            # 固定揭榜：名额校验（select_for_update 已锁定行，无并发风险）
             if task.task_mode == Task.TaskMode.FIXED_CLAIM:
                 if task.max_claimers and task.current_claimers >= task.max_claimers:
                     return Response({'error': '名额已满，无法领取'}, status=status.HTTP_400_BAD_REQUEST)
 
-        from django.utils import timezone
+            # --- 核心：领取 = 创建参与者 + 自动流转状态 ---
+            participant = TaskParticipant.objects.create(
+                task=task,
+                user=request.user,
+                role=TaskParticipant.Role.CLAIMER,
+                points=task.reward_points,
+                status=TaskParticipant.Status.ACCEPTED,
+            )
 
-        # 创建参与者记录
-        participant = TaskParticipant.objects.create(
+            task.current_claimers += 1
+
+            # 自动流转：PENDING → IN_PROGRESS
+            now = tz.now()
+            old_status = task.status
+            task.status = Task.Status.IN_PROGRESS
+            task.started_at = now
+            task.save(update_fields=[
+                'current_claimers', 'status', 'started_at', 'updated_at'
+            ])
+
+        # --- 以下在事务外执行（通知/历史，允许最终一致性） ---
+
+        # 记录历史
+        TaskHistory.objects.create(
             task=task,
-            user=request.user,
-            role=TaskParticipant.Role.CLAIMER,
-            points=task.reward_points,
-            status=TaskParticipant.Status.ACCEPTED,
+            action=TaskHistory.Action.STATUS_CHANGE,
+            actor=request.user,
+            old_value={'status': old_status},
+            new_value={'status': Task.Status.IN_PROGRESS, 'current_claimers': task.current_claimers},
+            note=f'领取任务并开始（{task.get_task_mode_display()}）',
         )
-
-        # 更新已领取人数
-        task.current_claimers += 1
-        task.save(update_fields=['current_claimers', 'updated_at'])
 
         # 通知创建人
         from apps.notifications.models import Notification
@@ -238,7 +266,7 @@ class TaskClaimView(views.APIView):
                 recipient=task.creator,
                 type=Notification.Type.TASK_ASSIGNED,
                 title=f'任务被领取: {task.title}',
-                content=f'{claimer_name} 领取了任务 ({task.current_claimers}/{task.max_claimers or "不限"})',
+                content=f'{claimer_name} 领取了任务，已进入进行中 ({task.current_claimers}/{task.max_claimers or "不限"})',
                 task=task,
                 actor=request.user,
             )
@@ -261,15 +289,7 @@ class TaskClaimView(views.APIView):
             except Exception:
                 logger.warning('额满通知发送失败: task=%s', task.task_no, exc_info=True)
 
-        # 记录历史
-        TaskHistory.objects.create(
-            task=task,
-            action=TaskHistory.Action.ASSIGNED,
-            actor=request.user,
-            old_value={'status': task.status},
-            new_value={'current_claimers': task.current_claimers},
-            note=f'领取任务（{task.get_task_mode_display()}）',
-        )
+        return Response(TaskParticipantSerializer(participant).data, status=status.HTTP_201_CREATED)
 
         return Response(TaskParticipantSerializer(participant).data, status=status.HTTP_201_CREATED)
 
@@ -443,14 +463,17 @@ class TaskHistoryListView(generics.ListAPIView):
         qs = TaskHistory.objects.filter(
             task_id=self.kwargs['pk']
         ).select_related('actor')
-        # 数据隔离：非相关人员不可查看
+        # 数据隔离：非相关人员不可查看（含参与者）
         if not user.is_superuser and user.role not in ('LEADER', 'ADMIN'):
             try:
                 task = Task.objects.get(pk=self.kwargs['pk'])
-                if task.assignee != user and task.creator != user:
-                    # 检查是否为参与者
-                    if not TaskParticipant.objects.filter(task=task, user=user).exists():
-                        return qs.none()
+                is_related = (
+                    task.assignee == user
+                    or task.creator == user
+                    or task.participants.filter(user=user).exists()
+                )
+                if not is_related:
+                    return qs.none()
             except Task.DoesNotExist:
                 return qs.none()
         return qs
@@ -518,7 +541,10 @@ class KanbanView(views.APIView):
         user = request.user
         if not user.is_superuser and user.role not in ('LEADER', 'ADMIN'):
             participation_q = Q(participants__user=user)
-            qs = qs.filter(Q(assignee=user) | Q(creator=user) | participation_q).distinct()
+            # MEMBER 可见：自己的任务 + 所有 PENDING/揭榜任务（任务大厅）
+            qs = qs.filter(
+                Q(assignee=user) | Q(creator=user) | participation_q | Q(status=Task.Status.PENDING)
+            ).distinct()
 
         # BUG-005: 支持筛选参数
         params = request.query_params

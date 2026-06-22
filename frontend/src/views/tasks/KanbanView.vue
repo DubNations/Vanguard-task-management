@@ -93,6 +93,22 @@ const goToTask = (taskId: string) => {
   router.push(`/tasks/${taskId}`)
 }
 
+// 领取任务
+const claimingId = ref<string | null>(null)
+const handleClaimTask = async (task: any) => {
+  if (task.task_mode === 'ASSIGNED') return
+  try {
+    claimingId.value = task.id
+    await api.post(`/tasks/${task.id}/claim/`)
+    ElMessage.success(`已领取: ${task.title}`)
+    fetchKanban()
+  } catch {
+    // handled by interceptor
+  } finally {
+    claimingId.value = null
+  }
+}
+
 const getColumnTasks = (status: string) => {
   return columns.value[status]?.tasks || []
 }
@@ -238,6 +254,15 @@ onMounted(() => {
                 <div class="kanban-card__footer">
                   <span class="kanban-card__meta">{{ task.task_no }}</span>
                   <div class="kanban-card__counts">
+                    <el-button
+                      v-if="status === 'PENDING' && task.task_mode !== 'ASSIGNED'"
+                      size="small"
+                      type="primary"
+                      :loading="claimingId === task.id"
+                      @click.stop="handleClaimTask(task)"
+                    >
+                      领取
+                    </el-button>
                     <span v-if="task.comment_count > 0" class="count-item">
                       <el-icon><ChatDotRound /></el-icon>{{ task.comment_count }}
                     </span>

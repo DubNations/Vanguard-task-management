@@ -1,6 +1,18 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
+const ROLE_HIERARCHY: Record<string, number> = {
+  MEMBER: 0,
+  LEADER: 1,
+  ADMIN: 2,
+}
+
+function meetsRole(userRole: string, isSuperuser: boolean, minRole?: string): boolean {
+  if (!minRole) return true
+  const userLevel = isSuperuser ? ROLE_HIERARCHY['ADMIN'] : (ROLE_HIERARCHY[userRole] ?? 0)
+  return userLevel >= (ROLE_HIERARCHY[minRole] ?? 0)
+}
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -62,7 +74,7 @@ const router = createRouter({
           path: 'imports',
           name: 'Imports',
           component: () => import('@/views/imports/ImportView.vue'),
-          meta: { title: '任务导入' },
+          meta: { title: '任务导入', minRole: 'LEADER' },
         },
         {
           path: 'exports',
@@ -80,25 +92,25 @@ const router = createRouter({
           path: 'admin/teams',
           name: 'TeamManagement',
           component: () => import('@/views/admin/TeamManagement.vue'),
-          meta: { title: '团队管理', requiresAdmin: true },
+          meta: { title: '团队管理', minRole: 'ADMIN' },
         },
         {
           path: 'admin/users',
           name: 'UserManagement',
           component: () => import('@/views/admin/UserManagement.vue'),
-          meta: { title: '用户管理', requiresAdmin: true },
+          meta: { title: '用户管理', minRole: 'LEADER' },
         },
         {
           path: 'admin/audit',
           name: 'AuditLog',
           component: () => import('@/views/admin/AuditLogView.vue'),
-          meta: { title: '操作日志', requiresAdmin: true },
+          meta: { title: '操作日志', minRole: 'LEADER' },
         },
         {
           path: 'admin/points',
           name: 'PointsConfig',
           component: () => import('@/views/admin/PointsConfigView.vue'),
-          meta: { title: '积分配置', requiresAdmin: true },
+          meta: { title: '积分配置', minRole: 'ADMIN' },
         },
       ],
     },
@@ -112,7 +124,8 @@ router.beforeEach((to, _from, next) => {
     next({ name: 'Login', query: { redirect: to.fullPath } })
   } else if (to.name === 'Login' && auth.isLoggedIn) {
     next({ name: 'Dashboard' })
-  } else if (to.meta.requiresAdmin && !auth.isAdmin && !auth.isLeader) {
+  } else if (to.meta.minRole && auth.user && !meetsRole(auth.user.role, auth.user.is_superuser, to.meta.minRole as string)) {
+    // 角色不足时静默跳转到工作台（体验优化：不暴露无权限路由的存在）
     next({ name: 'Dashboard' })
   } else {
     next()

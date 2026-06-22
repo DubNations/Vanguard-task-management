@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue'
 import api from '@/api'
+import { usePermission } from '@/composables/usePermission'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 
+const perm = usePermission()
 const loading = ref(true)
 const error = ref<string | null>(null)
 const teams = ref<any[]>([])
@@ -87,6 +89,10 @@ const handleSubmit = async () => {
 }
 
 const handleDelete = async (team: any) => {
+  if (!perm.canManageTeams()) {
+    ElMessage.warning('仅超管可删除团队')
+    return
+  }
   await ElMessageBox.confirm(`确定删除团队「${team.name}」？`, '确认删除', { type: 'warning' })
   try {
     await api.delete(`/auth/teams/${team.id}/`)
@@ -109,7 +115,7 @@ onMounted(() => {
     <div class="page-container__header">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <h2>团队管理</h2>
-        <el-button type="primary" @click="openCreate">创建团队</el-button>
+        <el-button v-if="perm.canManageTeams()" type="primary" @click="openCreate">创建团队</el-button>
       </div>
     </div>
 
@@ -122,8 +128,11 @@ onMounted(() => {
       <el-table-column prop="created_at" label="创建时间" width="180" />
       <el-table-column label="操作" width="150" align="center">
         <template #default="{ row }">
-          <el-button size="small" type="primary" link @click="openEdit(row)">编辑</el-button>
-          <el-button size="small" type="danger" link @click="handleDelete(row)">删除</el-button>
+          <template v-if="perm.canManageTeams()">
+            <el-button size="small" type="primary" link @click="openEdit(row)">编辑</el-button>
+            <el-button size="small" type="danger" link @click="handleDelete(row)">删除</el-button>
+          </template>
+          <span v-else style="color: #909399; font-size: 12px;">--</span>
         </template>
       </el-table-column>
     </el-table>
