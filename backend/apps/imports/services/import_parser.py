@@ -584,11 +584,10 @@ def _parse_form_layout(rows):
         if nums:
             record['reward_points'] = nums[0]
 
-    # 保留扩展字段到 custom_fields
+    # 保留附件到 custom_fields（附件是非标准字段，其他模板字段由 executor 写入正式字段）
     custom = {}
-    for key in ('task_source', 'output', 'completion_criteria', 'attachments', 'dispatcher_name'):
-        if key in record:
-            custom[key] = record.pop(key)
+    if 'attachments' in record:
+        custom['attachments'] = record.pop('attachments')
     if custom:
         record['custom_fields'] = custom
 
