@@ -4,6 +4,7 @@ from django.utils import timezone
 
 from apps.tasks.models import Task, TaskHistory, TaskParticipant
 from apps.notifications.models import Notification
+from common.utils import strip_html_tags
 
 logger = logging.getLogger('apps')
 
@@ -236,6 +237,15 @@ class TaskService:
     @staticmethod
     def update_task(task, data, user):
         """更新任务字段并记录 diff。"""
+        # XSS 防御：清洗文本字段
+        text_fields = ['title', 'description', 'task_source', 'completion_criteria',
+                        'dispatcher_name', 'output']
+        for field in text_fields:
+            if field in data and isinstance(data[field], str):
+                data[field] = strip_html_tags(data[field])
+        if 'tags' in data and isinstance(data['tags'], list):
+            data['tags'] = [strip_html_tags(t) for t in data['tags']]
+
         old_values = {}
         new_values = {}
 

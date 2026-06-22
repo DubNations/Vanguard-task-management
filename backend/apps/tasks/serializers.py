@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Task, TaskHistory, TaskComment, TaskParticipant
+from common.utils import strip_html_tags
 
 
 class TaskParticipantSerializer(serializers.ModelSerializer):
@@ -122,6 +123,17 @@ class TaskCreateSerializer(serializers.Serializer):
         return value
 
     def validate(self, data):
+        # XSS 防御：清洗所有文本字段的 HTML 标签
+        text_fields = ['title', 'description', 'task_source', 'completion_criteria',
+                        'dispatcher_name', 'output']
+        for field in text_fields:
+            if field in data and isinstance(data[field], str):
+                data[field] = strip_html_tags(data[field])
+
+        # 清洗 tags 中的 HTML
+        if 'tags' in data and data['tags']:
+            data['tags'] = [strip_html_tags(t) for t in data['tags']]
+
         task_mode = data.get('task_mode', Task.TaskMode.ASSIGNED)
         participants = data.get('participants', [])
         reward_points = data.get('reward_points', 0)
@@ -200,4 +212,6 @@ class TaskCommentCreateSerializer(serializers.ModelSerializer):
     def validate_content(self, value):
         if len(value.strip()) < 1:
             raise serializers.ValidationError('评论不能为空')
-        return value
+        if len(value) > 2000:
+            raise serializers.ValidationError('评论不能超过2000字符')
+        return strip_html_tags(value)

@@ -81,11 +81,22 @@ const toggleUser = async (user: any) => {
 
 const resetPassword = async (user: any) => {
   try {
-    await ElMessageBox.confirm(`确定重置用户 ${user.username} 的密码？`, '重置密码', {
-      type: 'warning',
-    })
-    await api.post(`/auth/users/${user.id}/reset-password/`)
-    ElMessage.success('密码已重置')
+    const { value: newPassword } = await ElMessageBox.prompt(
+      `请输入用户 ${user.username} 的新密码（至少6位）`,
+      '重置密码',
+      {
+        type: 'warning',
+        confirmButtonText: '确认重置',
+        cancelButtonText: '取消',
+        inputPattern: /^.{6,}$/,
+        inputErrorMessage: '密码长度不能少于6位',
+        inputType: 'password',
+      }
+    )
+    if (newPassword) {
+      await api.post(`/auth/users/${user.id}/reset-password/`, { new_password: newPassword })
+      ElMessage.success('密码已重置')
+    }
   } catch {
     // cancelled or error
   }

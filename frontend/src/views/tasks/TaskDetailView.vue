@@ -346,7 +346,7 @@ onMounted(fetchTask)
               <p style="margin-top: 4px; color: #606266;">{{ c.content }}</p>
             </div>
             <el-empty v-if="!comments.length" description="暂无评论" :image-size="40" />
-            <el-input v-model="newComment" type="textarea" :rows="3" placeholder="添加评论..." style="margin-top: 12px;" />
+            <el-input v-model="newComment" type="textarea" :rows="3" placeholder="添加评论..." maxlength="2000" show-word-limit style="margin-top: 12px;" />
             <el-button type="primary" style="margin-top: 8px;" @click="addComment" :disabled="!newComment.trim()">
               发送评论
             </el-button>

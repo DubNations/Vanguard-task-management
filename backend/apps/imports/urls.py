@@ -35,6 +35,17 @@ class ImportUploadView(APIView):
         from .services.import_parser import parse_import_file
         try:
             result = parse_import_file(session)
+
+            # 空文件检查
+            if result['total_rows'] == 0 and not result.get('errors'):
+                session.status = ImportSession.Status.FAILED
+                session.errors = [{'row': 0, 'message': '文件内容为空，请检查文件'}]
+                session.save()
+                return Response(
+                    {'error': '文件内容为空，请检查文件', 'session_id': str(session.id)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             session.status = ImportSession.Status.PREVIEW
             session.total_rows = result['total_rows']
             session.valid_rows = result['valid_rows']
