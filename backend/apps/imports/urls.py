@@ -90,6 +90,13 @@ class ImportConfirmView(APIView):
             raise PermissionDenied('您无权确认此导入')
 
         if session.status != ImportSession.Status.PREVIEW:
+            # BUG-008: 已完成/已确认的会话返回已有结果，防止重复导入
+            if session.status == ImportSession.Status.COMPLETED:
+                return Response({
+                    'imported_count': len(session.imported_task_ids),
+                    'task_ids': session.imported_task_ids,
+                    'message': '该文件已导入，请勿重复操作',
+                })
             return Response({'error': f'当前状态不允许确认: {session.status}'}, status=status.HTTP_400_BAD_REQUEST)
 
         session.status = ImportSession.Status.CONFIRMING

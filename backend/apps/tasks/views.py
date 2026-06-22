@@ -520,6 +520,20 @@ class KanbanView(views.APIView):
             participation_q = Q(participants__user=user)
             qs = qs.filter(Q(assignee=user) | Q(creator=user) | participation_q).distinct()
 
+        # BUG-005: 支持筛选参数
+        params = request.query_params
+        search = params.get('search')
+        if search:
+            qs = qs.filter(
+                Q(title__icontains=search) | Q(task_no__icontains=search)
+            )
+        priority = params.get('priority')
+        if priority:
+            qs = qs.filter(priority=priority)
+        assignee = params.get('assignee')
+        if assignee:
+            qs = qs.filter(assignee_id=assignee)
+
         all_tasks = list(qs.order_by('status', '-priority', '-created_at')[:200])
 
         columns = {}

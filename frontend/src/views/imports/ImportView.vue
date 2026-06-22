@@ -19,7 +19,9 @@ const handleUpload = async (file: File) => {
     sessionId.value = data.session_id
     previewData.value = data.preview_data || []
     ElMessage.success(`解析完成: ${data.valid_rows} 条有效 / ${data.error_rows} 条错误`)
-  } catch {} finally {
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || '文件解析失败')
+  } finally {
     uploading.value = false
   }
   return false
@@ -32,10 +34,17 @@ const handleConfirm = async () => {
   })
 
   try {
+    // BUG-008: 幂等处理 — 已导入的会话返回已有结果
     const { data } = await api.post(`/imports/${sessionId.value}/confirm/`)
     importResult.value = data
-    ElMessage.success(`成功导入 ${data.imported_count} 条任务`)
-  } catch {}
+    if (data.message) {
+      ElMessage.warning(data.message)
+    } else {
+      ElMessage.success(`成功导入 ${data.imported_count} 条任务`)
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || '导入失败，请重试')
+  }
 }
 </script>
 

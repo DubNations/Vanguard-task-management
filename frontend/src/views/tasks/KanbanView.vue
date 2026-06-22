@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import draggable from 'vuedraggable'
 import api from '@/api'
+import { ElMessage } from 'element-plus'
 import StatusTag from '@/components/StatusTag.vue'
 import PriorityTag from '@/components/PriorityTag.vue'
 import { formatDate } from '@/utils/format'
@@ -117,7 +118,10 @@ const onDragChange = async (status: string, evt: any) => {
       if (columns.value[status]) {
         columns.value[status].count = columns.value[status].tasks.length
       }
-    } catch {
+    } catch (e: any) {
+      // BUG-009: 拖拽失败提示用户
+      const msg = e?.response?.data?.error || '状态更新失败，已回退'
+      ElMessage.error(msg)
       const sourceTasks = columns.value[status].tasks
       const idx = sourceTasks.findIndex((t: any) => t.id === task.id)
       if (idx !== -1) sourceTasks.splice(idx, 1)
