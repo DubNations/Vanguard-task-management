@@ -83,14 +83,35 @@ const handleConfirm = async () => {
         <el-table-column label="标题" min-width="200">
           <template #default="{ row }">{{ row.data?.title }}</template>
         </el-table-column>
-        <el-table-column label="负责人" width="100">
-          <template #default="{ row }">{{ row.data?.assignee_name }}</template>
+        <el-table-column label="负责人/牵头人" width="120">
+          <template #default="{ row }">{{ row.data?.assignee_name || row.data?.lead_name || '-' }}</template>
         </el-table-column>
         <el-table-column label="优先级" width="80">
-          <template #default="{ row }">{{ row.data?.priority }}</template>
+          <template #default="{ row }">{{ row.data?.priority || '-' }}</template>
         </el-table-column>
         <el-table-column label="截止日期" width="120">
-          <template #default="{ row }">{{ row.data?.deadline }}</template>
+          <template #default="{ row }">{{ row.data?.deadline || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="积分" width="70">
+          <template #default="{ row }">{{ row.data?.reward_points || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="参与人" min-width="200">
+          <template #default="{ row }">
+            <span v-if="row.data?.participant_names_text" style="font-size: 12px; color: #606266;">
+              {{ row.data.participant_names_text.substring(0, 60) }}{{ row.data.participant_names_text.length > 60 ? '...' : '' }}
+            </span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="扩展信息" min-width="200">
+          <template #default="{ row }">
+            <div v-if="row.data?.custom_fields && Object.keys(row.data.custom_fields).length" style="font-size: 12px; color: #909399;">
+              <div v-for="(v, k) in row.data.custom_fields" :key="k" v-show="v">
+                {{ k }}: {{ String(v).substring(0, 40) }}{{ String(v).length > 40 ? '...' : '' }}
+              </div>
+            </div>
+            <span v-else>-</span>
+          </template>
         </el-table-column>
       </el-table>
     </el-card>

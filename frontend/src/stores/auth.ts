@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import api from '@/api'
+import axios from 'axios'
 
 interface User {
   id: string
@@ -35,7 +35,8 @@ export const useAuthStore = defineStore('auth', {
 
   actions: {
     async login(email: string, password: string) {
-      const { data } = await api.post('/auth/login/', { email, password })
+      // login 不走 interceptor，用独立 axios
+      const { data } = await axios.post('/api/v1/auth/login/', { email, password })
       this.accessToken = data.access
       this.refreshToken = data.refresh
       this.user = data.user
@@ -47,7 +48,8 @@ export const useAuthStore = defineStore('auth', {
 
     async doRefreshToken() {
       if (!this.refreshToken) throw new Error('No refresh token')
-      const { data } = await api.post('/auth/refresh/', { refresh: this.refreshToken })
+      // 使用独立 axios 实例，不走 401 interceptor，防止死循环
+      const { data } = await axios.post('/api/v1/auth/refresh/', { refresh: this.refreshToken })
       this.accessToken = data.access
       localStorage.setItem('access_token', data.access)
       if (data.refresh) {
@@ -57,8 +59,9 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async logout() {
+      // logout 不走 interceptor，用独立 axios（失败忽略）
       try {
-        await api.post('/auth/logout/', { refresh: this.refreshToken })
+        await axios.post('/api/v1/auth/logout/', { refresh: this.refreshToken })
       } catch {
         // ignore
       }
@@ -71,6 +74,8 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async fetchMe() {
+      // fetchMe 走 interceptor
+      const api = (await import('@/api')).default
       const { data } = await api.get('/auth/me/')
       this.user = data
       localStorage.setItem('user', JSON.stringify(data))

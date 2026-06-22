@@ -99,10 +99,44 @@ class PointRuleListView(APIView):
         }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
+class PointRuleDetailView(APIView):
+    """单条积分规则 — PATCH/DELETE。"""
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+
+    def patch(self, request, pk):
+        try:
+            rule = PointRule.objects.get(pk=pk)
+        except PointRule.DoesNotExist:
+            return Response({'error': '规则不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        for field in ['action', 'mode', 'base_points', 'priority_multiplier', 'is_active']:
+            if field in request.data:
+                setattr(rule, field, request.data[field])
+        rule.save()
+
+        return Response({
+            'id': str(rule.id),
+            'action': rule.action,
+            'mode': rule.mode,
+            'base_points': rule.base_points,
+            'priority_multiplier': rule.priority_multiplier,
+            'is_active': rule.is_active,
+        })
+
+    def delete(self, request, pk):
+        try:
+            rule = PointRule.objects.get(pk=pk)
+        except PointRule.DoesNotExist:
+            return Response({'error': '规则不存在'}, status=status.HTTP_404_NOT_FOUND)
+        rule.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 urlpatterns = [
     path('balance/', PointBalanceView.as_view(), name='point-balance'),
     path('transactions/', PointTransactionListView.as_view(), name='point-transactions'),
     path('leaderboard/', PointLeaderboardView.as_view(), name='point-leaderboard'),
     path('my-stats/', PointStatsView.as_view(), name='point-stats'),
     path('rules/', PointRuleListView.as_view(), name='point-rules'),
+    path('rules/<uuid:pk>/', PointRuleDetailView.as_view(), name='point-rule-detail'),
 ]

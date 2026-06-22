@@ -160,3 +160,22 @@ class TeamDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated, IsSuperAdmin]
     queryset = Team.objects.select_related('leader').all()
     serializer_class = TeamSerializer
+
+
+class UserResetPasswordView(views.APIView):
+    """管理员重置用户密码。"""
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+
+    def post(self, request, pk):
+        try:
+            user = User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            return Response({'error': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        new_password = request.data.get('new_password', '')
+        if not new_password or len(new_password) < 6:
+            return Response({'error': '密码长度至少6位'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save()
+        return Response({'detail': '密码已重置'})

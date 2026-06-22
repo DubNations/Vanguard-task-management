@@ -13,9 +13,14 @@ const api = axios.create({
 
 // Request interceptor: add JWT token
 api.interceptors.request.use((config) => {
-  const auth = useAuthStore()
-  if (auth.accessToken) {
-    config.headers.Authorization = `Bearer ${auth.accessToken}`
+  // 不给 refresh/login 请求带 expired token
+  const skipAuthUrls = ['/auth/refresh/', '/auth/login/']
+  const shouldSkip = skipAuthUrls.some((url) => config.url?.includes(url))
+  if (!shouldSkip) {
+    const auth = useAuthStore()
+    if (auth.accessToken) {
+      config.headers.Authorization = `Bearer ${auth.accessToken}`
+    }
   }
   // FormData 请求：移除 Content-Type，让浏览器自动设置 multipart/form-data + boundary
   if (config.data instanceof FormData) {
@@ -41,7 +46,11 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // 跳过 refresh/login 的 401，避免死循环
+    const skipUrls = ['/auth/refresh/', '/auth/login/', '/auth/logout/']
+    const isSkippable = skipUrls.some((url) => originalRequest.url?.includes(url))
+
+    if (error.response?.status === 401 && !originalRequest._retry && !isSkippable) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject })
@@ -58,7 +67,8 @@ api.interceptors.response.use(
         return api(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError)
-        auth.logout()
+        // await logout 防止异步 logout 再触发循环
+        try { await auth.logout() } catch { /* ignore */ }
         router.push('/login')
         return Promise.reject(refreshError)
       } finally {

@@ -82,9 +82,9 @@ AUTH_USER_MODEL = 'accounts.User'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('POSTGRES_DB', 'seedteam'),
-        'USER': os.environ.get('POSTGRES_USER', 'seedteam'),
-        'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'seedteam'),
+        'NAME': os.environ.get('POSTGRES_DB'),
+        'USER': os.environ.get('POSTGRES_USER'),
+        'PASSWORD': os.environ.get('POSTGRES_PASSWORD'),
         'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
         'PORT': os.environ.get('POSTGRES_PORT', '5432'),
         'CONN_MAX_AGE': 600,
@@ -155,11 +155,19 @@ REST_FRAMEWORK = {
     ],
 }
 
+# JWT — signing key MUST come from env vars; refuse to start with a guessable default
+JWT_SIGNING_KEY = os.environ.get('JWT_SIGNING_KEY') or os.environ.get('DJANGO_SECRET_KEY')
+if not JWT_SIGNING_KEY:
+    raise RuntimeError(
+        'FATAL: Neither JWT_SIGNING_KEY nor DJANGO_SECRET_KEY is set. '
+        'Please configure at least one before starting the server.'
+    )
+
 # JWT
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.environ.get('JWT_ACCESS_TOKEN_LIFETIME', 15))),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.environ.get('JWT_REFRESH_TOKEN_LIFETIME', 7))),
-    'SIGNING_KEY': os.environ.get('JWT_SIGNING_KEY', os.environ.get('DJANGO_SECRET_KEY', 'change-me')),
+    'SIGNING_KEY': JWT_SIGNING_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,

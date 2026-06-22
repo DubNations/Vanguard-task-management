@@ -8,7 +8,7 @@ import PriorityTag from '@/components/PriorityTag.vue'
 import { formatDate } from '@/utils/format'
 
 const router = useRouter()
-const loading = ref(true)
+const loading = ref(false)
 const error = ref<string | null>(null)
 const columns = ref<Record<string, any>>({})
 const transitioning = ref<string | null>(null)
@@ -75,7 +75,7 @@ const fetchKanban = async () => {
 
 const fetchUsers = async () => {
   try {
-    const { data } = await api.get('/users/')
+    const { data } = await api.get('/auth/users/')
     users.value = Array.isArray(data) ? data : data.results || []
   } catch {
     users.value = []

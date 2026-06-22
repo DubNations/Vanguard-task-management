@@ -95,7 +95,7 @@ const openCreateDialog = async () => {
   createDialogVisible.value = true
   // 加载团队列表
   try {
-    const { data } = await api.get('/admin/teams/')
+    const { data } = await api.get('/auth/teams/')
     teamOptions.value = data.results || data || []
   } catch {
     teamOptions.value = []

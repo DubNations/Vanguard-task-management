@@ -161,3 +161,8 @@ a, button, .el-button, .el-card {
     color: #303133;
   }
 }
+
+// Loading overlay 不遮挡侧边栏和导航
+.el-loading-overlay {
+  pointer-events: none;
+}

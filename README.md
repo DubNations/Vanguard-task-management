@@ -20,7 +20,7 @@
 - **看板视图** — 按状态分列展示，支持拖拽
 - **三级权限** — 超级管理员 / 组长(含ADMIN) / 成员，数据按角色隔离
 - **积分系统** — 规则配置、积分发放/扣除、周/月/总排行榜
-- **导入导出** — 支持 xlsx / csv / wps 导入，Excel / CSV 导出
+- **导入导出** — 支持 xlsx / csv / wps 导入（含 WPS 2003-2024 全版本 + WPS 文字文档），Excel / CSV 导出
 - **仪表盘** — 多维度统计看板，待办事项、趋势图表
 - **审计日志** — 全操作记录，筛选追溯
 - **通知系统** — 站内通知 + 邮件告警（任务分配、状态变更、逾期提醒）
@@ -181,6 +181,55 @@ npx vue-tsc --noEmit
 | TASK_CREATED | 2 | 创建任务时 |
 
 支持三种计积分模式：FIXED（固定值）、PRIORITY_BASED（按优先级加权）、CUSTOM（任务自定义积分）。
+
+## 常见问题
+
+### WPS 文件导入失败
+
+系统支持导入 `.wps` 格式文件，但需要根据 WPS 版本选择合适的解析方式：
+
+| WPS 版本 | 文件格式 | 系统支持 | 说明 |
+|----------|----------|----------|------|
+| WPS 2019+ | ZIP-based（兼容 xlsx） | ✅ 直接支持 | 新版 WPS 默认以 xlsx 兼容格式保存，系统自动解析 |
+| WPS 2016-2018 | ZIP-based（变体） | ✅ 直接支持 | 系统通过 XML 直接解析，不依赖 openpyxl |
+| WPS 2003-2015 | 二进制格式（.wps/.doc） | ✅ WPS CLI 转换 | 本机安装 WPS Office 即可自动转换（WPS → PDF → Excel） |
+| WPS 文字文档 | OLE2 格式 | ✅ WPS CLI 转换 | 同上，自动检测并转换 |
+
+**如果导入报错 "WPS 文件无法解析"，请按以下步骤操作：**
+
+1. **最简单的方式**：在 WPS Office 中打开文件 → 文件 → 另存为 → 选择 `.xlsx` 格式 → 重新上传
+2. **自动转换**（推荐）：确保本机安装了 WPS Office，系统会自动检测并转换：
+   - ZIP-based WPS → 直接解析内部 XML
+   - OLE2 WPS 文字文档 → 自动调用 WPS CLI 转换链（.wps → .doc → .pdf → .xlsx）
+   - 无需额外安装任何软件
+3. **安装 LibreOffice**（服务器端/Docker，一劳永逸）：
+
+```bash
+# Windows (需要管理员权限)
+choco install libreoffice-fresh
+
+# Ubuntu/Debian
+sudo apt install libreoffice
+
+# CentOS/RHEL
+sudo yum install libreoffice
+```
+
+4. **Docker 部署**：在 `docker-compose.yml` 中添加 LibreOffice：
+
+```yaml
+services:
+  backend:
+    # ... 其他配置
+    volumes:
+      - /usr/lib/libreoffice:/usr/lib/libreoffice:ro
+```
+
+**技术细节**：系统的 WPS 解析采用四层策略：
+1. ZIP 格式检测 → 直接解析内部 XML（支持 `sharedStrings` 和 `inlineStr`）
+2. ZIP 重打包为 xlsx → openpyxl 解析
+3. OLE2 格式检测 → WPS CLI 转换链（需要本机安装 WPS Office）
+4. LibreOffice 命令行转换 → xlsx 解析
 
 ## License
 

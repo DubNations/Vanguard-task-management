@@ -42,7 +42,7 @@ const adminItems = [
 // 通知
 const showNotif = ref(false)
 onMounted(() => {
-  notifStore.fetchNotifications()
+  notifStore.fetchNotifications().catch(() => {})
 })
 
 const handleLogout = async () => {

@@ -17,7 +17,7 @@ const authStore = useAuthStore()
 const { isLeader } = usePermission()
 
 const activeTab = ref('list')
-const loading = ref(true)
+const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)

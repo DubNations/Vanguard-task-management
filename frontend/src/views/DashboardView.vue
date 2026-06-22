@@ -12,7 +12,7 @@ const statusData = ref<any[]>([])
 const trendData = ref<any[]>([])
 const myInProgress = ref<any[]>([])
 const myPending = ref<any[]>([])
-const loading = ref(true)
+const loading = ref(false)
 const error = ref<string | null>(null)
 
 const fetchData = async () => {

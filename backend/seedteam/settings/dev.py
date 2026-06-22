@@ -6,6 +6,23 @@ SECRET_KEY = 'django-insecure-dev-key-change-in-production'
 ALLOWED_HOSTS = ['*']
 CORS_ALLOW_ALL_ORIGINS = True
 
+# Dev database defaults (override via env vars in production)
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('POSTGRES_DB', 'seedteam'),  # noqa: F405
+        'USER': os.environ.get('POSTGRES_USER', 'seedteam'),  # noqa: F405
+        'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'seedteam'),  # noqa: F405
+        'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),  # noqa: F405
+        'PORT': os.environ.get('POSTGRES_PORT', '5432'),  # noqa: F405
+        'CONN_MAX_AGE': 600,  # noqa: F405
+        'CONN_HEALTH_CHECKS': True,  # noqa: F405
+        'OPTIONS': {
+            'connect_timeout': 10,
+        },
+    }
+}
+
 # Use console email backend in dev
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
