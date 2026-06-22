@@ -46,12 +46,15 @@ ALLOWED_MIMETYPES = {
 
 
 def _check_task_permission(task, user):
-    """校验用户是否有权操作该任务的文件。"""
+    """校验用户是否有权操作该任务的文件（含参与者）。"""
     if user.is_superuser:
         return True
     if user.role in ('LEADER', 'ADMIN'):
         return True
     if task.assignee == user or task.creator == user:
+        return True
+    # 参与者可操作关联任务的文件
+    if task.participants.filter(user=user).exists():
         return True
     return False
 

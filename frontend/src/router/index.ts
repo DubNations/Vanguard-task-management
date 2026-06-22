@@ -80,7 +80,7 @@ const router = createRouter({
           path: 'exports',
           name: 'Exports',
           component: () => import('@/views/exports/ExportView.vue'),
-          meta: { title: '任务导出' },
+          meta: { title: '任务导出', minRole: 'LEADER' },
         },
         {
           path: 'profile',

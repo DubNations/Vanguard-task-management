@@ -103,7 +103,7 @@ class TaskListView(generics.ListCreateAPIView):
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         return Response(
-            TaskDetailSerializer(self._created_task).data,
+            TaskDetailSerializer(self._created_task, context={'request': request}).data,
             status=status.HTTP_201_CREATED,
         )
 
@@ -151,7 +151,7 @@ class TaskTransitionView(views.APIView):
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(TaskDetailSerializer(task).data)
+        return Response(TaskDetailSerializer(task, context={'request': request}).data)
 
     @staticmethod
     def _is_chief_lead(user, task):
@@ -291,8 +291,6 @@ class TaskClaimView(views.APIView):
 
         return Response(TaskParticipantSerializer(participant).data, status=status.HTTP_201_CREATED)
 
-        return Response(TaskParticipantSerializer(participant).data, status=status.HTTP_201_CREATED)
-
 
 class TaskParticipantListView(generics.ListCreateAPIView):
     """任务参与者列表 / 添加参与者（仅派发模式）。"""
@@ -300,9 +298,24 @@ class TaskParticipantListView(generics.ListCreateAPIView):
     serializer_class = TaskParticipantSerializer
 
     def get_queryset(self):
-        return TaskParticipant.objects.filter(
+        qs = TaskParticipant.objects.filter(
             task_id=self.kwargs['pk']
         ).select_related('user')
+        # 数据隔离：非组长以上只能看到关联任务的参与者
+        user = self.request.user
+        if not user.is_superuser and user.role not in ('LEADER', 'ADMIN'):
+            try:
+                task = Task.objects.get(pk=self.kwargs['pk'])
+                is_related = (
+                    task.assignee == user
+                    or task.creator == user
+                    or qs.filter(user=user).exists()
+                )
+                if not is_related:
+                    return qs.none()
+            except Task.DoesNotExist:
+                return qs.none()
+        return qs
 
     def perform_create(self, serializer):
         try:
@@ -491,6 +504,18 @@ class TaskCommentListView(generics.ListCreateAPIView):
         qs = TaskComment.objects.filter(task_id=self.kwargs['pk']).select_related('author')
         user = self.request.user
         if not user.is_superuser and user.role not in ('LEADER', 'ADMIN'):
+            # 数据隔离：非相关人员不可查看评论
+            try:
+                task = Task.objects.get(pk=self.kwargs['pk'])
+                is_related = (
+                    task.assignee == user
+                    or task.creator == user
+                    or task.participants.filter(user=user).exists()
+                )
+                if not is_related:
+                    return qs.none()
+            except Task.DoesNotExist:
+                return qs.none()
             qs = qs.filter(is_internal=False)
         return qs
 

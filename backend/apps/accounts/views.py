@@ -101,7 +101,7 @@ class ChangePasswordView(views.APIView):
 
 
 class UserListView(generics.ListCreateAPIView):
-    permission_classes = [IsAuthenticated, IsGroupLeader]
+    permission_classes = [IsAuthenticated]
     queryset = User.objects.select_related('team').all()
     filterset_fields = ['role', 'team', 'is_active']
     search_fields = ['username', 'email', 'phone']
@@ -111,16 +111,34 @@ class UserListView(generics.ListCreateAPIView):
             return UserCreateSerializer
         return UserListSerializer
 
+    def list(self, request, *args, **kwargs):
+        # 组长及以上返回完整列表；普通成员仅返回 id+username（用于下拉选择）
+        if request.user.is_superuser or request.user.role in ('LEADER', 'ADMIN'):
+            return super().list(request, *args, **kwargs)
+
+        users = User.objects.filter(is_active=True).values('id', 'username')
+        return Response(list(users))
+
 
 class UserDetailView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated]
     queryset = User.objects.select_related('team').all()
     serializer_class = UserDetailSerializer
 
+    def get_object(self):
+        obj = super().get_object()
+        user = self.request.user
+        # 超管/组长可查看任何人；普通成员只能查看自己
+        if not (user.is_superuser or user.role in ('LEADER', 'ADMIN')):
+            if obj.pk != user.pk:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied('您无权查看其他用户信息')
+        return obj
+
     def get_serializer_class(self):
-        if self.request.user.is_superuser or self.request.user.role == 'LEADER':
+        if self.request.user.is_superuser or self.request.user.role in ('LEADER', 'ADMIN'):
             return UserDetailSerializer
-        # Avoid extra query: compare PK from URL instead of calling get_object()
+        # 普通成员查看自己也用 DetailSerializer
         target_pk = self.kwargs.get('pk')
         if str(self.request.user.pk) == str(target_pk):
             return UserDetailSerializer

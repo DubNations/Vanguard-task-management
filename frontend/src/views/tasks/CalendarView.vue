@@ -4,7 +4,10 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '@/api'
 import { useAuthStore } from '@/stores/auth'
+import { usePermission } from '@/composables/usePermission'
 import { formatDate } from '@/utils/format'
+
+const perm = usePermission()
 
 interface CalendarTask {
   id: string
@@ -322,6 +325,10 @@ const createForm = reactive({
 })
 
 const openCreateDialog = (dateStr: string) => {
+  if (!perm.isLeader.value) {
+    ElMessage.warning('仅组长及以上可创建任务')
+    return
+  }
   createForm.deadline = dateStr
   createDialogVisible.value = true
 }

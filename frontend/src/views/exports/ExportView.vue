@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import api from '@/api'
+import { usePermission } from '@/composables/usePermission'
 import { ElMessage } from 'element-plus'
 
+const perm = usePermission()
 const loading = ref(false)
 const creating = ref(false)
 const error = ref<string | null>(null)
 const exports = ref<any[]>([])
-const format = ref<'excel' | 'csv'>('excel')
+const format = ref<'EXCEL' | 'CSV'>('EXCEL')
 
 const fetchExports = async () => {
   loading.value = true
@@ -34,8 +36,9 @@ const createExport = async () => {
 }
 
 const downloadFile = (row: any) => {
-  if (row.file_url) {
-    window.open(row.file_url, '_blank')
+  // 后端返回 download_url 字段
+  if (row.download_url) {
+    window.open(row.download_url, '_blank')
   } else {
     ElMessage.warning('文件暂不可下载')
   }
@@ -61,13 +64,13 @@ onMounted(fetchExports)
     </div>
 
     <!-- Create Export -->
-    <el-card shadow="hover">
+    <el-card v-if="perm.canManageUsers()" shadow="hover">
       <template #header><span>创建导出</span></template>
       <el-form inline>
         <el-form-item label="导出格式">
           <el-select v-model="format" style="width: 160px;">
-            <el-option label="Excel (.xlsx)" value="excel" />
-            <el-option label="CSV (.csv)" value="csv" />
+            <el-option label="Excel (.xlsx)" value="EXCEL" />
+            <el-option label="CSV (.csv)" value="CSV" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -84,7 +87,7 @@ onMounted(fetchExports)
       <el-table :data="exports" v-loading="loading" stripe>
         <el-table-column label="格式" width="100">
           <template #default="{ row }">
-            <el-tag size="small">{{ row.format === 'excel' ? 'Excel' : 'CSV' }}</el-tag>
+            <el-tag size="small">{{ row.format === 'EXCEL' ? 'Excel' : row.format === 'CSV' ? 'CSV' : row.format }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="100">
