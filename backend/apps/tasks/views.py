@@ -563,13 +563,14 @@ class KanbanView(views.APIView):
         all_tasks = list(qs.order_by('status', '-priority', '-created_at')[:200])
 
         columns = {}
+        serializer_context = {'request': request}
         for status_choice in Task.Status.choices:
             key = status_choice[0]
             tasks_in_col = [t for t in all_tasks if t.status == key][:20]
             columns[key] = {
                 'label': status_choice[1],
                 'count': len([t for t in all_tasks if t.status == key]),
-                'tasks': TaskListSerializer(tasks_in_col, many=True).data,
+                'tasks': TaskListSerializer(tasks_in_col, many=True, context=serializer_context).data,
             }
 
         return Response(columns)

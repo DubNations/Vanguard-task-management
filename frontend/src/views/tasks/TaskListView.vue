@@ -285,7 +285,7 @@ onMounted(fetchTasks)
         <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
             <el-button
-              v-if="row.status === 'PENDING' && row.task_mode !== 'ASSIGNED'"
+              v-if="row.can_claim"
               size="small"
               type="primary"
               :loading="claimingId === row.id"

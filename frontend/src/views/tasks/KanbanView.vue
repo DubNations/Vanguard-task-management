@@ -255,7 +255,7 @@ onMounted(() => {
                   <span class="kanban-card__meta">{{ task.task_no }}</span>
                   <div class="kanban-card__counts">
                     <el-button
-                      v-if="status === 'PENDING' && task.task_mode !== 'ASSIGNED'"
+                      v-if="task.can_claim"
                       size="small"
                       type="primary"
                       :loading="claimingId === task.id"

@@ -34,6 +34,7 @@ class TaskListSerializer(serializers.ModelSerializer):
     comments_count = serializers.IntegerField(read_only=True, default=0)
     files_count = serializers.IntegerField(read_only=True, default=0)
     participants_count = serializers.IntegerField(read_only=True, default=0)
+    can_claim = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -45,9 +46,34 @@ class TaskListSerializer(serializers.ModelSerializer):
             'task_source', 'dispatcher_name',
             'deadline', 'is_overdue', 'tags',
             'reward_points', 'max_claimers', 'current_claimers',
+            'can_claim',
             'comments_count', 'files_count', 'participants_count',
             'created_at', 'updated_at',
         ]
+
+    def get_can_claim(self, obj):
+        """根据当前用户和任务状态，判断是否可领取。"""
+        request = self.context.get('request')
+        if not request or not request.user:
+            return False
+        user = request.user
+        # 条件1: 必须是揭榜模式
+        if obj.task_mode not in (Task.TaskMode.FREE_CLAIM, Task.TaskMode.FIXED_CLAIM):
+            return False
+        # 条件2: 必须是 PENDING 状态
+        if obj.status != Task.Status.PENDING:
+            return False
+        # 条件3: 不能是创建人自己
+        if obj.creator_id == user.id:
+            return False
+        # 条件4: 不能已领取过
+        if TaskParticipant.objects.filter(task=obj, user=user).exists():
+            return False
+        # 条件5: 固定揭榜需有名额
+        if obj.task_mode == Task.TaskMode.FIXED_CLAIM:
+            if obj.max_claimers and obj.current_claimers >= obj.max_claimers:
+                return False
+        return True
 
 
 class TaskDetailSerializer(serializers.ModelSerializer):
@@ -62,6 +88,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
     comments_count = serializers.IntegerField(read_only=True, default=0)
     files_count = serializers.IntegerField(read_only=True, default=0)
     participants = TaskParticipantSerializer(many=True, read_only=True)
+    can_claim = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -77,11 +104,31 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             'task_source', 'completion_criteria', 'dispatcher_name', 'output',
             'is_overdue', 'days_until_deadline',
             'tags', 'custom_fields', 'source', 'reward_points',
+            'can_claim',
             'participants',
             'comments_count', 'files_count',
             'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'task_no', 'status', 'creator', 'created_at', 'updated_at']
+
+    def get_can_claim(self, obj):
+        """根据当前用户和任务状态，判断是否可领取。"""
+        request = self.context.get('request')
+        if not request or not request.user:
+            return False
+        user = request.user
+        if obj.task_mode not in (Task.TaskMode.FREE_CLAIM, Task.TaskMode.FIXED_CLAIM):
+            return False
+        if obj.status != Task.Status.PENDING:
+            return False
+        if obj.creator_id == user.id:
+            return False
+        if TaskParticipant.objects.filter(task=obj, user=user).exists():
+            return False
+        if obj.task_mode == Task.TaskMode.FIXED_CLAIM:
+            if obj.max_claimers and obj.current_claimers >= obj.max_claimers:
+                return False
+        return True
 
 
 class TaskCreateSerializer(serializers.Serializer):

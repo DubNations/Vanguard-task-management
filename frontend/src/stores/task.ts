@@ -46,6 +46,7 @@ export interface Task {
   tags: string[]
   custom_fields: Record<string, unknown>
   reward_points: number
+  can_claim: boolean
   participants: TaskParticipant[]
   comments_count: number
   files_count: number
