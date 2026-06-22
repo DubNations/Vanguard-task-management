@@ -41,6 +41,7 @@ class TaskListSerializer(serializers.ModelSerializer):
             'priority', 'priority_display', 'progress',
             'task_mode', 'task_mode_display',
             'assignee', 'assignee_name', 'creator_name',
+            'task_source', 'dispatcher_name',
             'deadline', 'is_overdue', 'tags',
             'reward_points', 'max_claimers', 'current_claimers',
             'comments_count', 'files_count', 'participants_count',
@@ -72,6 +73,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             'assignee', 'assignee_name',
             'creator', 'creator_name', 'reviewer', 'reviewer_name',
             'deadline', 'started_at', 'completed_at',
+            'task_source', 'completion_criteria', 'dispatcher_name', 'output',
             'is_overdue', 'days_until_deadline',
             'tags', 'custom_fields', 'source', 'reward_points',
             'participants',
@@ -89,6 +91,12 @@ class TaskCreateSerializer(serializers.Serializer):
     tags = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     custom_fields = serializers.DictField(required=False, default=dict)
     reward_points = serializers.IntegerField(min_value=0, default=0)
+
+    # WPS 模板字段
+    task_source = serializers.CharField(max_length=200, required=False, default='', allow_blank=True)
+    completion_criteria = serializers.CharField(required=False, default='', allow_blank=True)
+    dispatcher_name = serializers.CharField(max_length=50, required=False, default='', allow_blank=True)
+    output = serializers.CharField(required=False, default='', allow_blank=True)
 
     # 任务模式字段
     task_mode = serializers.ChoiceField(

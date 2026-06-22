@@ -34,6 +34,11 @@ const createForm = reactive({
   task_mode: 'ASSIGNED',
   reward_points: 0,
   max_claimers: 3,
+  // WPS 模板字段
+  task_source: '',
+  completion_criteria: '',
+  dispatcher_name: '',
+  output: '',
   // 派发模式
   chief_lead_points: 20,
   group_lead_points: 10,
@@ -119,6 +124,10 @@ const handleCreateTask = async () => {
       description: createForm.description,
       priority: createForm.priority,
       task_mode: createForm.task_mode,
+      task_source: createForm.task_source,
+      completion_criteria: createForm.completion_criteria,
+      dispatcher_name: createForm.dispatcher_name,
+      output: createForm.output,
     }
     if (createForm.deadline) payload.deadline = createForm.deadline
 
@@ -161,6 +170,10 @@ const resetCreateForm = () => {
   createForm.task_mode = 'ASSIGNED'
   createForm.reward_points = 0
   createForm.max_claimers = 3
+  createForm.task_source = ''
+  createForm.completion_criteria = ''
+  createForm.dispatcher_name = ''
+  createForm.output = ''
   createForm.chief_lead_points = 20
   createForm.group_lead_points = 10
   createForm.participant_points = 5
@@ -288,6 +301,22 @@ onMounted(fetchTasks)
             style="width: 100%"
             value-format="YYYY-MM-DDTHH:mm:ss"
           />
+        </el-form-item>
+
+        <!-- WPS 模板字段 -->
+        <el-divider content-position="left">模板参数</el-divider>
+
+        <el-form-item label="任务来源">
+          <el-input v-model="createForm.task_source" placeholder="如：关于征集公司2026年第一批..." />
+        </el-form-item>
+        <el-form-item label="派发人">
+          <el-input v-model="createForm.dispatcher_name" placeholder="派发人姓名" />
+        </el-form-item>
+        <el-form-item label="产出要求">
+          <el-input v-model="createForm.output" type="textarea" :rows="2" placeholder="产出要求说明" />
+        </el-form-item>
+        <el-form-item label="完成标准">
+          <el-input v-model="createForm.completion_criteria" type="textarea" :rows="2" placeholder="完成标准说明" />
         </el-form-item>
 
         <!-- 任务模式选择 -->

@@ -79,6 +79,13 @@ class Task(models.Model):
         help_text='固定揭榜模式下的名额数，null 表示不限')
     current_claimers = models.PositiveIntegerField('已领取人数', default=0)
 
+    # WPS 模板字段（标准参数项）
+    task_source = models.CharField('任务来源', max_length=200, blank=True, default='',
+        help_text='如：关于征集公司2026年第一批...、部门自选等')
+    completion_criteria = models.TextField('完成标准', blank=True, default='')
+    dispatcher_name = models.CharField('派发人', max_length=50, blank=True, default='')
+    output = models.TextField('产出要求', blank=True, default='')
+
     tags = models.JSONField('标签', default=list, blank=True)
     custom_fields = models.JSONField('自定义字段', default=dict, blank=True)
     external_id = models.CharField('外部ID(导入用)', max_length=100, blank=True, default='')

@@ -64,6 +64,10 @@ class TaskService:
                     reward_points=data.get('reward_points', 0),
                     task_mode=task_mode,
                     max_claimers=data.get('max_claimers'),
+                    task_source=data.get('task_source', ''),
+                    completion_criteria=data.get('completion_criteria', ''),
+                    dispatcher_name=data.get('dispatcher_name', ''),
+                    output=data.get('output', ''),
                 )
                 break
             except IntegrityError:
@@ -236,7 +240,8 @@ class TaskService:
         new_values = {}
 
         updatable = ['title', 'description', 'priority', 'deadline', 'progress',
-                      'assignee', 'reviewer', 'tags', 'custom_fields', 'reward_points']
+                      'assignee', 'reviewer', 'tags', 'custom_fields', 'reward_points',
+                      'task_source', 'completion_criteria', 'dispatcher_name', 'output']
 
         for field in updatable:
             if field not in data:

@@ -78,13 +78,8 @@ def execute_import(session, user):
             except (ValueError, TypeError):
                 pass
 
-        # 构建描述（合并 content + completion_criteria）
-        desc_parts = []
-        if record.get('description'):
-            desc_parts.append(record['description'])
-        if record.get('completion_criteria'):
-            desc_parts.append(f"完成标准：{record['completion_criteria']}")
-        description = '\n\n'.join(desc_parts)
+        # 构建描述（事项内容）
+        description = record.get('description', '')
 
         # 积分
         reward_points = 0
@@ -103,6 +98,10 @@ def execute_import(session, user):
             'assignee': assignee,
             'deadline': deadline,
             'reward_points': reward_points,
+            'task_source': record.get('task_source', ''),
+            'completion_criteria': record.get('completion_criteria', ''),
+            'dispatcher_name': record.get('dispatcher_name', ''),
+            'output': record.get('output', ''),
             'tags': [],
             'custom_fields': {},
         }
@@ -123,11 +122,10 @@ def execute_import(session, user):
             task.progress = progress
             task.save(update_fields=['progress', 'updated_at'])
 
-        # 存储扩展字段到 custom_fields
+        # 存储附件路径到 custom_fields（只有附件是非标准字段）
         custom = {}
-        for key in ('task_source', 'output', 'completion_criteria', 'attachments', 'dispatcher_name'):
-            if record.get(key):
-                custom[key] = record[key]
+        if record.get('attachments'):
+            custom['attachments'] = record['attachments']
         if custom:
             task.custom_fields = custom
             task.save(update_fields=['custom_fields', 'updated_at'])

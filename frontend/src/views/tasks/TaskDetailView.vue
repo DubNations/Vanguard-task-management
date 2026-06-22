@@ -241,6 +241,8 @@ onMounted(fetchTask)
                 </el-tag>
               </el-descriptions-item>
               <el-descriptions-item label="负责人">{{ task.assignee_name || '未分配' }}</el-descriptions-item>
+              <el-descriptions-item label="派发人">{{ task.dispatcher_name || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="任务来源" :span="2">{{ task.task_source || '-' }}</el-descriptions-item>
               <el-descriptions-item label="创建人">{{ task.creator_name }}</el-descriptions-item>
               <el-descriptions-item label="进度">
                 <el-progress :percentage="task.progress" :stroke-width="8" />
@@ -260,6 +262,8 @@ onMounted(fetchTask)
                 {{ formatDateTime(task.created_at) }}
               </el-descriptions-item>
               <el-descriptions-item label="描述" :span="2">{{ task.description || '暂无' }}</el-descriptions-item>
+              <el-descriptions-item v-if="task.output" label="产出要求" :span="2">{{ task.output }}</el-descriptions-item>
+              <el-descriptions-item v-if="task.completion_criteria" label="完成标准" :span="2">{{ task.completion_criteria }}</el-descriptions-item>
             </el-descriptions>
           </el-card>
 

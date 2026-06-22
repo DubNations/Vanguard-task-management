@@ -103,13 +103,25 @@ const handleConfirm = async () => {
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column label="扩展信息" min-width="200">
+        <el-table-column label="任务来源" min-width="180">
+          <template #default="{ row }">{{ row.data?.task_source || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="派发人" width="90">
+          <template #default="{ row }">{{ row.data?.dispatcher_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="完成标准" min-width="180">
           <template #default="{ row }">
-            <div v-if="row.data?.custom_fields && Object.keys(row.data.custom_fields).length" style="font-size: 12px; color: #909399;">
-              <div v-for="(v, k) in row.data.custom_fields" :key="k" v-show="v">
-                {{ k }}: {{ String(v).substring(0, 40) }}{{ String(v).length > 40 ? '...' : '' }}
-              </div>
-            </div>
+            <span v-if="row.data?.completion_criteria" style="font-size: 12px;">
+              {{ row.data.completion_criteria.substring(0, 40) }}{{ row.data.completion_criteria.length > 40 ? '...' : '' }}
+            </span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="产出" min-width="150">
+          <template #default="{ row }">
+            <span v-if="row.data?.output" style="font-size: 12px;">
+              {{ row.data.output.substring(0, 30) }}{{ row.data.output.length > 30 ? '...' : '' }}
+            </span>
             <span v-else>-</span>
           </template>
         </el-table-column>

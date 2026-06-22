@@ -37,6 +37,10 @@ export interface Task {
   deadline: string | null
   started_at: string | null
   completed_at: string | null
+  task_source: string
+  completion_criteria: string
+  dispatcher_name: string
+  output: string
   is_overdue: boolean
   days_until_deadline: number | null
   tags: string[]
