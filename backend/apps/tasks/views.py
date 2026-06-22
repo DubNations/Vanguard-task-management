@@ -238,35 +238,56 @@ class TaskClaimView(views.APIView):
             task.current_claimers += 1
 
             # 自动流转：PENDING → IN_PROGRESS
+            # FIXED_CLAIM 模式下，需等额满才流转；FREE_CLAIM 直接流转
             now = tz.now()
             old_status = task.status
-            task.status = Task.Status.IN_PROGRESS
-            task.started_at = now
-            task.save(update_fields=[
-                'current_claimers', 'status', 'started_at', 'updated_at'
-            ])
+            should_transition = True
+            if task.task_mode == Task.TaskMode.FIXED_CLAIM:
+                if task.max_claimers and task.current_claimers < task.max_claimers:
+                    should_transition = False
+
+            update_fields = ['current_claimers', 'updated_at']
+            if should_transition:
+                task.status = Task.Status.IN_PROGRESS
+                task.started_at = now
+                update_fields.extend(['status', 'started_at'])
+
+            task.save(update_fields=update_fields)
 
         # --- 以下在事务外执行（通知/历史，允许最终一致性） ---
 
         # 记录历史
-        TaskHistory.objects.create(
-            task=task,
-            action=TaskHistory.Action.STATUS_CHANGE,
-            actor=request.user,
-            old_value={'status': old_status},
-            new_value={'status': Task.Status.IN_PROGRESS, 'current_claimers': task.current_claimers},
-            note=f'领取任务并开始（{task.get_task_mode_display()}）',
-        )
+        if should_transition:
+            TaskHistory.objects.create(
+                task=task,
+                action=TaskHistory.Action.STATUS_CHANGE,
+                actor=request.user,
+                old_value={'status': old_status},
+                new_value={'status': Task.Status.IN_PROGRESS, 'current_claimers': task.current_claimers},
+                note=f'领取任务并开始（{task.get_task_mode_display()}）',
+            )
+        else:
+            TaskHistory.objects.create(
+                task=task,
+                action=TaskHistory.Action.UPDATED,
+                actor=request.user,
+                new_value={'current_claimers': task.current_claimers},
+                note=f'领取任务（{task.get_task_mode_display()}，{task.current_claimers}/{task.max_claimers}）',
+            )
 
         # 通知创建人
         from apps.notifications.models import Notification
         try:
             claimer_name = request.user.display_name or request.user.username
+            if should_transition:
+                status_msg = '已进入进行中'
+            else:
+                status_msg = f'等待额满 ({task.current_claimers}/{task.max_claimers})'
             Notification.objects.create(
                 recipient=task.creator,
                 type=Notification.Type.TASK_ASSIGNED,
                 title=f'任务被领取: {task.title}',
-                content=f'{claimer_name} 领取了任务，已进入进行中 ({task.current_claimers}/{task.max_claimers or "不限"})',
+                content=f'{claimer_name} 领取了任务，{status_msg}',
                 task=task,
                 actor=request.user,
             )
