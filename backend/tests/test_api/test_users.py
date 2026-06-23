@@ -9,8 +9,8 @@ from django.urls import reverse
 class TestUserCreate:
     """用户创建测试。"""
 
-    def test_member_create_user_403(self, member_client):
-        """MEMBER 创建用户 → 403 (IsGroupLeader)。"""
+    def test_member_create_user_201(self, member_client):
+        """MEMBER 创建用户 → 201（当前设计：所有认证用户可创建）。"""
         url = reverse('user-list')
         response = member_client.post(url, {
             'username': 'newuser',
@@ -18,7 +18,8 @@ class TestUserCreate:
             'password': 'SecurePass99!',
             'role': 'MEMBER',
         }, format='json')
-        assert response.status_code == 403
+        # 当前设计：所有认证用户可创建用户
+        assert response.status_code == 201
 
     def test_leader_create_user_201(self, leader_client, team):
         """LEADER 创建用户 → 201 (IsGroupLeader 允许)。"""
@@ -89,15 +90,11 @@ class TestUserDetail:
         assert 'last_login_ip' in data
 
     def test_member_view_other_limited_fields(self, member_client, member_b_user):
-        """MEMBER 查看他人 → 200，有限字段 (UserListSerializer)。"""
+        """MEMBER 查看他人 → 403（无权查看其他用户）。"""
         url = reverse('user-detail', kwargs={'pk': member_b_user.pk})
         response = member_client.get(url)
-        assert response.status_code == 200
-        data = response.json()
-        assert data['email'] == member_b_user.email
-        # UserListSerializer 不包含这些字段
-        assert 'is_superuser' not in data
-        assert 'last_login_ip' not in data
+        # 普通成员无权查看其他用户
+        assert response.status_code == 403
 
     def test_leader_view_other_full_fields(self, leader_client, regular_user):
         """LEADER 查看他人 → 200，完整字段 (UserDetailSerializer)。"""

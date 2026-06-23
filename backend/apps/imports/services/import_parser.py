@@ -568,9 +568,12 @@ def _parse_form_layout(rows):
     if record.get('content') and not record.get('description'):
         record['description'] = record.pop('content')
 
-    # 解析开始/结束时间 → deadline
+    # 解析开始/结束时间
+    # start_date 保留为 started_at，end_date 转为 deadline
     start_str = record.pop('start_date', '')
     end_str = record.pop('end_date', '')
+    if start_str:
+        record['started_at'] = start_str  # 保留开始时间
     if end_str:
         record['deadline'] = end_str
     elif start_str:

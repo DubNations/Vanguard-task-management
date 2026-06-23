@@ -45,17 +45,20 @@ def check_overdue_tasks():
         ).exists()
 
         if not already_notified:
-            Notification.objects.create(
-                recipient=task.assignee,
-                type=Notification.Type.TASK_OVERDUE,
-                title=f'任务逾期提醒: {task.title}',
-                content=f'任务 {task.task_no} 已于 {task.deadline.strftime("%m-%d %H:%M")} 到期，请尽快处理。',
-                task=task,
-            )
+            try:
+                Notification.objects.create(
+                    recipient=task.assignee,
+                    type=Notification.Type.TASK_OVERDUE,
+                    title=f'任务逾期提醒: {task.title}',
+                    content=f'任务 {task.task_no} 已于 {task.deadline.strftime("%m-%d %H:%M")} 到期，请尽快处理。',
+                    task=task,
+                )
 
-            # 发送邮件
-            send_task_overdue_email(task, task.assignee)
-            count += 1
+                # 发送邮件
+                send_task_overdue_email(task, task.assignee)
+                count += 1
+            except Exception:
+                logger.error('逾期通知发送失败: task=%s', task.task_no, exc_info=True)
 
     logger.info('逾期检查完成: 发送 %d 条提醒', count)
     return count
@@ -146,15 +149,18 @@ def check_upcoming_deadlines():
         ).exists()
 
         if not already_notified:
-            hours_left = int((task.deadline - now).total_seconds() / 3600)
-            Notification.objects.create(
-                recipient=task.assignee,
-                type=Notification.Type.TASK_DEADLINE,
-                title=f'任务即将到期: {task.title}',
-                content=f'任务 {task.task_no} 将在 {hours_left} 小时后到期，请抓紧完成。',
-                task=task,
-            )
-            count += 1
+            try:
+                hours_left = int((task.deadline - now).total_seconds() / 3600)
+                Notification.objects.create(
+                    recipient=task.assignee,
+                    type=Notification.Type.TASK_DEADLINE,
+                    title=f'任务即将到期: {task.title}',
+                    content=f'任务 {task.task_no} 将在 {hours_left} 小时后到期，请抓紧完成。',
+                    task=task,
+                )
+                count += 1
+            except Exception:
+                logger.error('到期预警通知发送失败: task=%s', task.task_no, exc_info=True)
 
     logger.info('到期预警完成: 创建 %d 条通知', count)
     return count

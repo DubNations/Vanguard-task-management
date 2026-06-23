@@ -1,13 +1,11 @@
 import api from './index'
 
-/** 仪表盘 API */
+/** 仪表盘 API（新端点） */
 export const dashboardApi = {
-  getSummary: () => api.get('/dashboard/summary/'),
-  getStatusDistribution: () => api.get('/dashboard/status/'),
-  getPriorityDistribution: () => api.get('/dashboard/priority/'),
-  getWeeklyTrend: (weeks = 8) => api.get('/dashboard/trend/', { params: { weeks } }),
-  getTeamWorkload: () => api.get('/dashboard/workload/'),
-  getOverdueTasks: (limit = 10) => api.get('/dashboard/overdue/', { params: { limit } }),
+  /** MEMBER 个人工作台 */
+  getMemberDashboard: () => api.get('/dashboard/member/'),
+  /** LEADER/ADMIN 团队管理台 */
+  getLeaderDashboard: () => api.get('/dashboard/leader/'),
 }
 
 /** 导入 API */

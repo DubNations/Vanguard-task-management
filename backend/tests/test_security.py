@@ -74,7 +74,7 @@ class TestInjectionPrevention:
         assert task.title == malicious
 
     def test_xss_in_title_stored_as_is(self, auth_client):
-        """XSS 脚本原样存储（前端负责转义）。"""
+        """XSS 脚本被后端 strip_html_tags 清洗。"""
         xss = '<script>alert(1)</script>'
         resp = auth_client.post('/api/v1/tasks/', {
             'title': xss,
@@ -82,7 +82,8 @@ class TestInjectionPrevention:
         assert resp.status_code == 201
         from apps.tasks.models import Task
         task = Task.objects.get(id=resp.data['id'])
-        assert task.title == xss
+        # XSS 防御：HTML 标签被移除
+        assert task.title == 'alert(1)'
 
     def test_path_traversal_in_filename(self, auth_client, sample_task, media_root):
         """路径遍历文件名由 Django 安全处理。"""

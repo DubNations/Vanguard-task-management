@@ -105,6 +105,7 @@ class Task(models.Model):
             models.Index(fields=['assignee', 'status']),
             models.Index(fields=['deadline']),
             models.Index(fields=['-created_at']),
+            models.Index(fields=['completed_at']),
         ]
 
     def __str__(self):

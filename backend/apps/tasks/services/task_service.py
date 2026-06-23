@@ -1,12 +1,21 @@
 import logging
 from django.db import transaction, IntegrityError
 from django.utils import timezone
+from django.core.cache import cache
 
 from apps.tasks.models import Task, TaskHistory, TaskParticipant
 from apps.notifications.models import Notification
 from common.utils import strip_html_tags
 
 logger = logging.getLogger('apps')
+
+
+def _clear_dashboard_cache(*user_ids):
+    """清除指定用户的仪表盘缓存。"""
+    for uid in user_ids:
+        if uid:
+            cache.delete(f'dashboard:member:{uid}')
+            cache.delete(f'dashboard:leader:{uid}')
 
 
 class TaskService:
@@ -121,6 +130,8 @@ class TaskService:
             note=f'任务创建（{task.get_task_mode_display()}模式）',
         )
 
+        # 清缓存：创建人 + assignee
+        _clear_dashboard_cache(user.id, task.assignee_id)
         return task
 
     @staticmethod
@@ -175,6 +186,7 @@ class TaskService:
             task.progress = 100
         if new_status == Task.Status.REJECTED:
             task.progress = max(0, task.progress - 10)
+            task.completed_at = None  # 防御性清除：被退回时重置完成时间
 
         task.save()
 
@@ -188,16 +200,19 @@ class TaskService:
             note=note,
         )
 
-        # 通知相关人员
+        # 通知相关人员（通知失败不影响主流程）
         if task.assignee and task.assignee != user:
-            Notification.objects.create(
-                recipient=task.assignee,
-                type=Notification.Type.TASK_STATUS,
-                title=f'任务状态变更: {task.title}',
-                content=f'状态: {Task.Status(old_status).label} → {Task.Status(new_status).label}',
-                task=task,
-                actor=user,
-            )
+            try:
+                Notification.objects.create(
+                    recipient=task.assignee,
+                    type=Notification.Type.TASK_STATUS,
+                    title=f'任务状态变更: {task.title}',
+                    content=f'状态: {Task.Status(old_status).label} → {Task.Status(new_status).label}',
+                    task=task,
+                    actor=user,
+                )
+            except Exception:
+                logger.warning('状态变更通知发送失败: task=%s', task.task_no, exc_info=True)
 
         # ===== 派发模式完成：批量发放全团队积分 =====
         if (new_status == Task.Status.COMPLETED
@@ -207,6 +222,11 @@ class TaskService:
         # ===== 揭榜模式完成（仅记录，积分由管理员逐个判定） =====
         # FREE_CLAIM / FIXED_CLAIM 的积分在 TaskParticipantCompleteView 中发放
 
+        # 清缓存：所有相关用户
+        participant_ids = list(
+            task.participants.values_list('user_id', flat=True)
+        )
+        _clear_dashboard_cache(task.creator_id, task.assignee_id, *participant_ids)
         return task
 
     @staticmethod

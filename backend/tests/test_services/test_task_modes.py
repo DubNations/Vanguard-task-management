@@ -54,11 +54,13 @@ class TestAssignedMode:
             ],
         }, admin_user)
 
+        # 有 participants 时自动进入 IN_PROGRESS
+        assert task.status == 'IN_PROGRESS'
+
         # 先接受邀请
         task.participants.update(status='ACCEPTED')
 
         # 推进到可完成状态
-        task = TaskService.transition_status(task, 'IN_PROGRESS', admin_user)
         task = TaskService.transition_status(task, 'IN_REVIEW', admin_user)
         task = TaskService.transition_status(task, 'COMPLETED', admin_user)
 
@@ -85,7 +87,8 @@ class TestAssignedMode:
             ],
         }, admin_user)
 
-        task = TaskService.transition_status(task, 'IN_PROGRESS', admin_user)
+        # 有 participants 时自动进入 IN_PROGRESS
+        assert task.status == 'IN_PROGRESS'
         task = TaskService.transition_status(task, 'IN_REVIEW', admin_user)
 
         # regular_user 不是总牵头人，不应有权完成

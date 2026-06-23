@@ -123,12 +123,12 @@ class TestOnboardingFlow:
         refresh = RefreshToken.for_user(user)
         api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
 
-        url = reverse('dashboard-summary')
+        url = reverse('dashboard-member')
         response = api_client.get(url)
         assert response.status_code == 200
         data = response.json()
-        assert data['total'] == 0
-        assert data['pending'] == 0
-        assert data['in_progress'] == 0
-        assert data['completed'] == 0
-        assert data['overdue'] == 0
+        assert data['summary']['total'] == 0
+        assert data['summary']['pending'] == 0
+        assert data['summary']['in_progress'] == 0
+        assert data['summary']['completed'] == 0
+        assert data['summary']['overdue'] == 0

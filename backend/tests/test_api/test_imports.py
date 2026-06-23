@@ -130,14 +130,16 @@ class TestImportConfirm:
         assert Task.objects.filter(source__startswith='IMPORT:').exists()
 
     def test_confirm_completed(self, auth_client, admin_user, sample_xlsx):
-        """确认已完成的会话 → 400。"""
+        """确认已完成的会话 → 200（返回已有结果，防止重复导入）。"""
         with open(sample_xlsx, 'rb') as f:
             resp = auth_client.post(reverse('import-upload'), {'file': f}, format='multipart')
         session_id = resp.json()['session_id']
 
         auth_client.post(reverse('import-confirm', kwargs={'pk': session_id}))
         response = auth_client.post(reverse('import-confirm', kwargs={'pk': session_id}))
-        assert response.status_code == 400
+        # 已完成的会话返回 200 和已有结果（BUG-008: 防止重复导入）
+        assert response.status_code == 200
+        assert 'imported_count' in response.json()
 
     def test_confirm_nonexistent(self, auth_client):
         """确认不存在的会话 → 404。"""

@@ -135,22 +135,24 @@ class TestDataIsolation:
     def test_member_sees_only_own_tasks(
         self, member_client, regular_user, admin_user,
     ):
-        """MEMBER 列表仅看到自己负责或创建的任务。"""
+        """MEMBER 列表：自己的任务 + PENDING 任务大厅。"""
         from apps.tasks.services.task_service import TaskService
-        # 创建分配给 regular_user 的任务
+        # 创建分配给 regular_user 的任务（IN_PROGRESS）
         TaskService.create_task(
             {'title': '分配给成员的任务', 'assignee': regular_user},
             admin_user,
         )
-        # 创建不相关的任务
+        # 创建不相关的 PENDING 任务（任务大厅，对所有人可见）
         TaskService.create_task({'title': '其他任务'}, admin_user)
 
         resp = member_client.get('/api/v1/tasks/')
         assert resp.status_code == 200
         results = resp.data['results']
-        # MEMBER 只能看到分配给自己的 1 条
-        assert len(results) == 1
-        assert results[0]['title'] == '分配给成员的任务'
+        # PENDING 任务对所有成员可见（任务大厅）
+        assert len(results) == 2
+        titles = [t['title'] for t in results]
+        assert '分配给成员的任务' in titles
+        assert '其他任务' in titles  # PENDING 任务大厅
 
     def test_leader_sees_all_tasks(
         self, leader_client, admin_user,

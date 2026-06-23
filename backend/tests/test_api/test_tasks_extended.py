@@ -88,12 +88,13 @@ class TestTaskCreate:
         resp = auth_client.post(BASE_URL, {'title': '任务🚀发射'}, format='json')
         assert resp.status_code == 201
 
-    # 8. 标题含 HTML 标签 → 成功(原样存储)
+    # 8. 标题含 HTML 标签 → 成功(XSS 防御：移除标签)
     def test_create_title_html(self, auth_client):
         title = '<b>加粗</b>任务'
         resp = auth_client.post(BASE_URL, {'title': title}, format='json')
         assert resp.status_code == 201
-        assert resp.data['title'] == title
+        # XSS 防御：HTML 标签被移除
+        assert resp.data['title'] == '加粗任务'
 
     # 9. 指定有效 assignee → 成功
     def test_create_with_valid_assignee(self, auth_client, regular_user):
@@ -321,15 +322,22 @@ class TestTaskComment:
         assert resp.status_code == 400
 
     # 40. 内部评论 MEMBER 不可见(列表过滤)
-    def test_internal_comment_hidden_from_member(self, auth_client, member_client, sample_task):
+    def test_internal_comment_hidden_from_member(self, auth_client, member_client, admin_user):
+        # 创建非 PENDING 任务（有 assignee 时自动进入 IN_PROGRESS）
+        from apps.tasks.services.task_service import TaskService
+        task = TaskService.create_task(
+            {'title': '非公开任务', 'assignee': admin_user}, admin_user
+        )
+        assert task.status == 'IN_PROGRESS'
+
         # 管理员添加内部评论
         auth_client.post(
-            _comments_url(sample_task.id),
+            _comments_url(task.id),
             {'content': '内部讨论', 'is_internal': True},
             format='json',
         )
-        # MEMBER 查看列表看不到
-        resp = member_client.get(_comments_url(sample_task.id), format='json')
+        # MEMBER 查看列表看不到（非 PENDING 任务，且不是相关人员）
+        resp = member_client.get(_comments_url(task.id), format='json')
         assert resp.status_code == 200
         results = resp.data.get('results', resp.data)
         assert len(results) == 0
@@ -425,17 +433,17 @@ class TestKanbanAndList:
 
     # 48. MEMBER 只看自己
     def test_member_sees_only_own_tasks(self, auth_client, member_client, regular_user, admin_user):
-        # admin 创建一个无负责人的任务
+        # admin 创建一个无负责人的任务（PENDING，对所有人可见）
         auth_client.post(BASE_URL, {'title': '管理员任务'}, format='json')
-        # admin 创建一个分配给 member 的任务
+        # admin 创建一个分配给 member 的任务（IN_PROGRESS）
         auth_client.post(BASE_URL, {'title': '成员任务', 'assignee': str(regular_user.pk)}, format='json')
 
         resp = member_client.get(BASE_URL, format='json')
         results = resp.data.get('results', resp.data)
-        # MEMBER 只能看到分配给自己的任务
         titles = [t['title'] for t in results]
+        # PENDING 任务对所有成员可见（任务大厅）
         assert '成员任务' in titles
-        assert '管理员任务' not in titles
+        assert '管理员任务' in titles  # PENDING 任务大厅
 
     # 49. 按 status 过滤
     def test_list_filter_by_status(self, auth_client, sample_task):

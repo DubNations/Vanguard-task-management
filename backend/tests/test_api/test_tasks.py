@@ -37,7 +37,7 @@ class TestTaskListAPI:
         from rest_framework_simplejwt.tokens import RefreshToken
         from apps.tasks.services.task_service import TaskService
 
-        # 创建管理员的任务
+        # 创建管理员的 PENDING 任务（任务大厅，对所有人可见）
         TaskService.create_task({'title': '管理员任务'}, admin_user)
         # 创建普通用户的任务
         TaskService.create_task({'title': '成员任务', 'assignee': regular_user}, admin_user)
@@ -48,10 +48,12 @@ class TestTaskListAPI:
         url = reverse('task-list')
         response = api_client.get(url)
         assert response.status_code == 200
-        # 成员只能看到自己的任务
         tasks = response.json().get('results', response.json())
-        assert len(tasks) == 1
-        assert tasks[0]['title'] == '成员任务'
+        # PENDING 任务对所有成员可见（任务大厅）
+        assert len(tasks) == 2
+        titles = [t['title'] for t in tasks]
+        assert '成员任务' in titles
+        assert '管理员任务' in titles  # PENDING 任务大厅
 
     def test_create_task_empty_title(self, auth_client):
         url = reverse('task-list')

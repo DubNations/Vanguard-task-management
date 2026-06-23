@@ -79,8 +79,13 @@ class TestUserAPI:
 
         url = reverse('user-list')
         response = api_client.get(url)
-        # 普通成员无权限
-        assert response.status_code == 403
+        # 普通成员可查看用户列表（仅 id+username）
+        assert response.status_code == 200
+        data = response.json()
+        # MEMBER 只返回 id 和 username
+        assert len(data) > 0
+        assert 'id' in data[0]
+        assert 'username' in data[0]
 
     def test_user_toggle_active(self, auth_client, regular_user):
         url = reverse('user-toggle', kwargs={'pk': regular_user.pk})

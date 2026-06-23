@@ -139,10 +139,14 @@ class TestNotificationCreation:
 
     def test_status_change_creates_notification(self, admin_user, regular_user):
         """10. 状态变更 → 创建 TASK_STATUS 通知。"""
+        # 创建任务（有 assignee 时自动进入 IN_PROGRESS）
         task = TaskService.create_task(
             {'title': '状态任务', 'assignee': regular_user}, admin_user
         )
-        TaskService.transition_status(task, Task.Status.IN_PROGRESS, admin_user)
+        assert task.status == 'IN_PROGRESS'  # 自动进入进行中
+
+        # 转换到 IN_REVIEW
+        TaskService.transition_status(task, Task.Status.IN_REVIEW, admin_user)
         assert Notification.objects.filter(
             recipient=regular_user, type=Notification.Type.TASK_STATUS
         ).exists()

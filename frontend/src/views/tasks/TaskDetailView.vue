@@ -27,6 +27,7 @@ const newComment = ref('')
 const claimLoading = ref(false)
 const completeLoading = ref(false)
 const editLoading = ref(false)
+const deleteLoading = ref(false)
 const editDialogVisible = ref(false)
 const editForm = reactive({
   title: '',
@@ -70,6 +71,12 @@ const canEdit = computed(() => {
   if (!task.value) return false
   if (authStore.user?.is_superuser || authStore.user?.role === 'LEADER' || authStore.user?.role === 'ADMIN') return true
   return task.value.creator === authStore.user?.id
+})
+
+const canDelete = computed(() => {
+  if (!task.value) return false
+  if (task.value.status === 'COMPLETED' || task.value.status === 'CANCELLED') return false
+  return canEdit.value
 })
 
 const openEditDialog = () => {
@@ -165,6 +172,27 @@ const handleTransition = async (targetStatus: string) => {
     await fetchTask()
   } catch {
     // cancelled or error
+  }
+}
+
+const handleDelete = async () => {
+  if (!task.value) return
+  try {
+    await ElMessageBox.confirm(
+      `确定删除任务「${task.value.title}」？删除后无法恢复。`,
+      '删除确认',
+      { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' }
+    )
+    deleteLoading.value = true
+    await api.delete(`/tasks/${route.params.id}/`)
+    ElMessage.success('任务已删除')
+    router.push('/tasks')
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error(e.response?.data?.error || '删除失败')
+    }
+  } finally {
+    deleteLoading.value = false
   }
 }
 
@@ -267,6 +295,10 @@ onMounted(fetchTask)
           <!-- 编辑按钮 -->
           <el-button v-if="canEdit" @click="openEditDialog">
             编辑
+          </el-button>
+          <!-- 删除按钮 -->
+          <el-button v-if="canDelete" type="danger" :loading="deleteLoading" @click="handleDelete">
+            删除
           </el-button>
           <!-- 揭榜领取按钮 -->
           <el-button v-if="canClaim" type="primary" :loading="claimLoading" @click="handleClaim">

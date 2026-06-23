@@ -1,37 +1,64 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '@/api'
+import { ElMessage } from 'element-plus'
+import {
+  Document, Loading, Finished, WarningFilled, TrophyBase, UserFilled
+} from '@element-plus/icons-vue'
+import { dashboardApi } from '@/api/modules'
+import { useAuthStore } from '@/stores/auth'
+import DashboardStatCard from '@/components/dashboard/DashboardStatCard.vue'
+import OverdueAlert from '@/components/dashboard/OverdueAlert.vue'
+import MemberWorkload from '@/components/dashboard/MemberWorkload.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import PriorityTag from '@/components/PriorityTag.vue'
-import { formatDateTime } from '@/utils/format'
+import type {
+  MemberDashboardResponse, LeaderDashboardResponse,
+  DashboardSummary, TodoTask, OverdueTask, MemberWorkload as MemberWorkloadType
+} from '@/types/dashboard'
 
 const router = useRouter()
-const summary = ref<any>({})
-const statusData = ref<any[]>([])
-const trendData = ref<any[]>([])
-const myInProgress = ref<any[]>([])
-const myPending = ref<any[]>([])
+const authStore = useAuthStore()
+
 const loading = ref(false)
 const error = ref<string | null>(null)
+
+const isLeader = computed(() =>
+  authStore.user?.role === 'LEADER' || authStore.user?.role === 'ADMIN' || authStore.user?.is_superuser
+)
+
+// MEMBER 数据
+const memberData = ref<MemberDashboardResponse | null>(null)
+// LEADER 数据
+const leaderData = ref<LeaderDashboardResponse | null>(null)
+
+const summary = computed<DashboardSummary>(() => {
+  if (isLeader.value && leaderData.value) return leaderData.value.summary
+  if (memberData.value) return memberData.value.summary
+  return { total: 0, pending: 0, in_progress: 0, in_review: 0, completed: 0, overdue: 0 }
+})
+
+const todoList = computed<TodoTask[]>(() => memberData.value?.todo_list ?? [])
+const overdueTasks = computed<OverdueTask[]>(() => leaderData.value?.overdue_tasks ?? [])
+const memberWorkload = computed<MemberWorkloadType[]>(() => leaderData.value?.member_workload ?? [])
+const monthlyPoints = computed(() => memberData.value?.monthly_points ?? { earned: 0, completed_count: 0, in_progress_count: 0 })
+const monthlyTeamPoints = computed(() => leaderData.value?.monthly_team_points ?? { total_points: 0, completed_count: 0, completion_rate: 0 })
 
 const fetchData = async () => {
   loading.value = true
   error.value = null
   try {
-    const [summaryRes, statusRes, trendRes, inProgressRes, pendingRes] = await Promise.all([
-      api.get('/dashboard/summary/'),
-      api.get('/dashboard/status/'),
-      api.get('/dashboard/trend/'),
-      api.get('/tasks/', { params: { status: 'IN_PROGRESS', page_size: 5 } }),
-      api.get('/tasks/', { params: { status: 'PENDING', page_size: 5 } }),
-    ])
-    summary.value = summaryRes.data
-    statusData.value = statusRes.data
-    trendData.value = trendRes.data
-    myInProgress.value = inProgressRes.data.results || inProgressRes.data || []
-    myPending.value = pendingRes.data.results || pendingRes.data || []
-  } catch {
+    // MEMBER 数据始终获取
+    const memberRes = await dashboardApi.getMemberDashboard()
+    memberData.value = memberRes.data
+
+    // LEADER 额外获取管理台数据
+    if (isLeader.value) {
+      const leaderRes = await dashboardApi.getLeaderDashboard()
+      leaderData.value = leaderRes.data
+    }
+  } catch (e: any) {
+    console.error('Dashboard fetch error:', e)
     error.value = '加载失败，请重试'
   } finally {
     loading.value = false
@@ -40,300 +67,250 @@ const fetchData = async () => {
 
 onMounted(fetchData)
 
-const statusColors: Record<string, string> = {
-  PENDING: '#909399',
-  IN_PROGRESS: '#409eff',
-  IN_REVIEW: '#e6a23c',
-  COMPLETED: '#67c23a',
-  REJECTED: '#f56c6c',
-  CANCELLED: '#c0c4cc',
+function goToTask(taskId: string) {
+  router.push(`/tasks/${taskId}`)
 }
 
-/** 周趋势柱状图最大值，用于计算相对高度 */
-const trendMax = ref(1)
-const calcTrendMax = () => {
-  if (!trendData.value.length) return 1
-  return Math.max(...trendData.value.flatMap((w: any) => [w.created, w.completed]), 1)
+function goToTaskList(status?: string) {
+  const query: Record<string, string> = {}
+  if (status) query.status = status
+  router.push({ path: '/tasks', query })
 }
-
-watch(trendData, () => { trendMax.value = calcTrendMax() }, { immediate: true })
 </script>
 
 <template>
   <div class="page-container" v-loading="loading">
     <el-result v-if="error" icon="error" :title="error">
-      <template #extra><el-button @click="fetchData">重试</el-button></template>
+      <template #extra>
+        <el-button @click="fetchData">重试</el-button>
+      </template>
     </el-result>
-    <div class="page-container__header">
-      <h2>仪表盘</h2>
-    </div>
 
-    <!-- Stat Cards -->
-    <div class="stat-cards">
-      <div class="stat-card stat-card--blue">
-        <div class="stat-card__value">{{ summary.total || 0 }}</div>
-        <div class="stat-card__label">总任务数</div>
+    <template v-else>
+      <!-- 页头 -->
+      <div class="page-container__header">
+        <h2>{{ isLeader ? '团队管理台' : '我的工作台' }}</h2>
+        <el-button text @click="fetchData">
+          <el-icon><Loading /></el-icon>
+          刷新
+        </el-button>
       </div>
-      <div class="stat-card stat-card--blue">
-        <div class="stat-card__value">{{ summary.in_progress || 0 }}</div>
-        <div class="stat-card__label">进行中</div>
-      </div>
-      <div class="stat-card stat-card--orange">
-        <div class="stat-card__value">{{ summary.in_review || 0 }}</div>
-        <div class="stat-card__label">待审核</div>
-      </div>
-      <div class="stat-card stat-card--green">
-        <div class="stat-card__value">{{ summary.completed || 0 }}</div>
-        <div class="stat-card__label">已完成</div>
-      </div>
-      <div class="stat-card stat-card--red">
-        <div class="stat-card__value">{{ summary.overdue || 0 }}</div>
-        <div class="stat-card__label">已逾期</div>
-      </div>
-      <div class="stat-card stat-card--green">
-        <div class="stat-card__value">{{ summary.completed_today || 0 }}</div>
-        <div class="stat-card__label">今日完成</div>
-      </div>
-    </div>
 
-    <!-- Charts -->
-    <el-row :gutter="20">
-      <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>
-            <span>任务状态分布</span>
-          </template>
-          <div class="status-dist">
-            <el-empty v-if="!statusData.length" description="暂无数据" />
-            <div v-else>
-              <div v-for="item in statusData" :key="item.status" class="status-dist__row">
-                <div class="status-dist__label">
-                  <StatusTag :status="item.status" />
-                </div>
-                <div class="status-dist__bar-wrap">
-                  <el-progress
-                    :percentage="summary.total ? Math.round(item.count / summary.total * 100) : 0"
-                    :color="statusColors[item.status] || '#409eff'"
-                    :stroke-width="14"
-                    :text-inside="true"
-                    :format="() => `${item.count}`"
-                  />
-                </div>
+      <!-- 状态卡片 -->
+      <el-row :gutter="16" class="stat-row">
+        <el-col :xs="12" :sm="8" :md="4">
+          <DashboardStatCard
+            label="总任务"
+            :value="summary.total"
+            :icon="Document"
+            icon-color="#409EFF"
+            icon-bg="#ecf5ff"
+            @click="goToTaskList()"
+          />
+        </el-col>
+        <el-col :xs="12" :sm="8" :md="4">
+          <DashboardStatCard
+            label="待领取"
+            :value="summary.pending"
+            :icon="WarningFilled"
+            icon-color="#E6A23C"
+            icon-bg="#fdf6ec"
+            @click="goToTaskList('PENDING')"
+          />
+        </el-col>
+        <el-col :xs="12" :sm="8" :md="4">
+          <DashboardStatCard
+            label="进行中"
+            :value="summary.in_progress"
+            :icon="Loading"
+            icon-color="#409EFF"
+            icon-bg="#ecf5ff"
+            @click="goToTaskList('IN_PROGRESS')"
+          />
+        </el-col>
+        <el-col :xs="12" :sm="8" :md="4">
+          <DashboardStatCard
+            label="待审核"
+            :value="summary.in_review"
+            :icon="Finished"
+            icon-color="#E6A23C"
+            icon-bg="#fdf6ec"
+            @click="goToTaskList('IN_REVIEW')"
+          />
+        </el-col>
+        <el-col :xs="12" :sm="8" :md="4">
+          <DashboardStatCard
+            label="已完成"
+            :value="summary.completed"
+            :icon="Finished"
+            icon-color="#67C23A"
+            icon-bg="#f0f9eb"
+            @click="goToTaskList('COMPLETED')"
+          />
+        </el-col>
+        <el-col :xs="12" :sm="8" :md="4">
+          <DashboardStatCard
+            label="已逾期"
+            :value="summary.overdue"
+            :icon="WarningFilled"
+            icon-color="#F56C6C"
+            icon-bg="#fef0f0"
+          />
+        </el-col>
+      </el-row>
+
+      <!-- MEMBER: 本月积分 + 待办列表 -->
+      <el-row :gutter="16" class="content-row">
+        <el-col :xs="24" :md="8">
+          <el-card shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <el-icon><TrophyBase /></el-icon>
+                <span>本月积分</span>
+              </div>
+            </template>
+            <div class="points-display">
+              <div class="points-main">
+                <span class="points-value">{{ monthlyPoints.earned }}</span>
+                <span class="points-unit">分</span>
+              </div>
+              <div class="points-detail">
+                <span>已完成 {{ monthlyPoints.completed_count }} 项</span>
+                <span>进行中 {{ monthlyPoints.in_progress_count }} 项</span>
               </div>
             </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>
-            <span>周趋势</span>
-          </template>
-          <div class="trend-chart-wrap">
-            <el-empty v-if="!trendData.length" description="暂无数据" />
-            <div v-else class="trend-chart">
-              <div class="trend-chart__legend">
-                <span class="trend-chart__legend-item"><i style="background:#409eff"></i>新建</span>
-                <span class="trend-chart__legend-item"><i style="background:#67c23a"></i>完成</span>
-              </div>
-              <div class="trend-chart__bars">
-                <div v-for="week in trendData" :key="week.week" class="trend-bar">
-                  <div class="trend-bar__values">
-                    <span class="trend-bar__created">{{ week.created }}</span>
-                    <span class="trend-bar__completed">{{ week.completed }}</span>
-                  </div>
-                  <div class="trend-bar__bars">
-                    <div
-                      class="trend-bar__created-bar"
-                      :style="{ height: Math.max((week.created / trendMax) * 140, 4) + 'px' }"
-                    />
-                    <div
-                      class="trend-bar__completed-bar"
-                      :style="{ height: Math.max((week.completed / trendMax) * 140, 4) + 'px' }"
-                    />
-                  </div>
-                  <div class="trend-bar__label">{{ week.week }}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+          </el-card>
+        </el-col>
 
-    <!-- 我的待办 -->
-    <el-row :gutter="20" style="margin-top: 20px;">
-      <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <span>我的进行中</span>
-              <el-tag size="small" type="primary" round>{{ myInProgress.length }}</el-tag>
-            </div>
-          </template>
-          <el-empty v-if="!myInProgress.length" description="暂无进行中任务" :image-size="60" />
-          <div v-else class="todo-list">
-            <div
-              v-for="task in myInProgress"
-              :key="task.id"
-              class="todo-item"
-              @click="router.push(`/tasks/${task.id}`)"
-            >
-              <div class="todo-item__main">
-                <span class="todo-item__title">{{ task.title }}</span>
-                <div class="todo-item__tags">
+        <el-col :xs="24" :md="16">
+          <el-card shadow="hover" class="todo-card">
+            <template #header>
+              <div class="card-header">
+                <span>待办任务</span>
+                <el-tag type="info" size="small">{{ todoList.length }} 项</el-tag>
+              </div>
+            </template>
+            <el-empty v-if="!todoList.length" description="暂无待办任务" :image-size="60" />
+            <div v-else class="todo-list">
+              <div
+                v-for="task in todoList"
+                :key="task.id"
+                class="todo-item"
+                :class="{ 'is-overdue': task.is_overdue }"
+                @click="goToTask(task.id)"
+              >
+                <div class="todo-item__main">
+                  <span class="todo-item__no">{{ task.task_no }}</span>
+                  <span class="todo-item__title">{{ task.title }}</span>
                   <PriorityTag :priority="task.priority" />
                 </div>
-              </div>
-              <div class="todo-item__meta">
-                <span>{{ task.task_no }}</span>
-                <span :style="{ color: task.is_overdue ? '#f56c6c' : '#909399' }">
-                  {{ task.deadline ? formatDateTime(task.deadline) : '-' }}
-                </span>
-              </div>
-              <el-progress :percentage="task.progress" :stroke-width="4" :show-text="false" style="margin-top:4px;" />
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <span>我的待领取</span>
-              <el-tag size="small" type="info" round>{{ myPending.length }}</el-tag>
-            </div>
-          </template>
-          <el-empty v-if="!myPending.length" description="暂无待领取任务" :image-size="60" />
-          <div v-else class="todo-list">
-            <div
-              v-for="task in myPending"
-              :key="task.id"
-              class="todo-item"
-              @click="router.push(`/tasks/${task.id}`)"
-            >
-              <div class="todo-item__main">
-                <span class="todo-item__title">{{ task.title }}</span>
-                <div class="todo-item__tags">
-                  <PriorityTag :priority="task.priority" />
+                <div class="todo-item__meta">
+                  <StatusTag :status="task.status" />
+                  <span v-if="task.days_label" class="todo-item__deadline" :class="{ 'is-overdue': task.is_overdue }">
+                    {{ task.days_label }}
+                  </span>
+                  <span v-if="task.assignee_name" class="todo-item__assignee">{{ task.assignee_name }}</span>
                 </div>
               </div>
-              <div class="todo-item__meta">
-                <span>{{ task.task_no }}</span>
-                <span :style="{ color: task.is_overdue ? '#f56c6c' : '#909399' }">
-                  {{ task.deadline ? formatDateTime(task.deadline) : '-' }}
-                </span>
-              </div>
             </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+          </el-card>
+        </el-col>
+      </el-row>
+
+      <!-- LEADER: 逾期预警 + 成员负载 -->
+      <template v-if="isLeader">
+        <el-row :gutter="16" class="content-row">
+          <el-col :xs="24" :md="12">
+            <OverdueAlert :tasks="overdueTasks" @view-task="goToTask" />
+          </el-col>
+          <el-col :xs="24" :md="12">
+            <el-card shadow="hover">
+              <template #header>
+                <div class="card-header">
+                  <el-icon><TrophyBase /></el-icon>
+                  <span>本月团队积分</span>
+                </div>
+              </template>
+              <div class="points-display">
+                <div class="points-main">
+                  <span class="points-value">{{ monthlyTeamPoints.total_points }}</span>
+                  <span class="points-unit">分</span>
+                </div>
+                <div class="points-detail">
+                  <span>已完成 {{ monthlyTeamPoints.completed_count }} 项</span>
+                  <span>完成率 {{ (monthlyTeamPoints.completion_rate * 100).toFixed(0) }}%</span>
+                </div>
+              </div>
+            </el-card>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="16" class="content-row">
+          <el-col :span="24">
+            <MemberWorkload :members="memberWorkload" />
+          </el-col>
+        </el-row>
+      </template>
+    </template>
   </div>
 </template>
 
 <style scoped lang="scss">
-.status-dist {
-  min-height: 200px;
+.stat-row {
+  margin-bottom: 16px;
+}
+
+.content-row {
+  margin-bottom: 16px;
+}
+
+.card-header {
   display: flex;
   align-items: center;
-
-  > div { width: 100%; }
+  gap: 8px;
+  font-weight: 600;
 }
 
-.status-dist__row {
+// 积分展示
+.points-display {
+  text-align: center;
+  padding: 16px 0;
+}
+
+.points-main {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.status-dist__label {
-  min-width: 70px;
-  flex-shrink: 0;
-}
-
-.status-dist__bar-wrap {
-  flex: 1;
-}
-
-.trend-chart-wrap {
-  min-height: 260px;
-  display: flex;
-  align-items: center;
-}
-
-.trend-chart {
-  width: 100%;
-  &__legend {
-    display: flex;
-    gap: 16px;
-    margin-bottom: 12px;
-    justify-content: flex-end;
-  }
-  &__legend-item {
-    font-size: 12px;
-    color: #606266;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    i {
-      display: inline-block;
-      width: 10px;
-      height: 10px;
-      border-radius: 2px;
-    }
-  }
-  &__bars {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-around;
-    height: 200px;
-    padding: 10px 0;
-  }
-}
-
-.trend-bar {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  align-items: baseline;
+  justify-content: center;
   gap: 4px;
+}
 
-  &__values {
-    font-size: 11px;
-    display: flex;
-    gap: 8px;
-  }
-  &__created { color: #409eff; }
-  &__completed { color: #67c23a; }
+.points-value {
+  font-size: 36px;
+  font-weight: 700;
+  color: #409EFF;
+}
 
-  &__bars {
-    display: flex;
-    gap: 4px;
-    align-items: flex-end;
-    min-height: 80px;
-  }
-  &__created-bar {
-    width: 18px;
-    background: linear-gradient(180deg, #409eff, #79bbff);
-    border-radius: 4px 4px 0 0;
-    transition: height 0.4s ease;
-  }
-  &__completed-bar {
-    width: 18px;
-    background: linear-gradient(180deg, #67c23a, #95d475);
-    border-radius: 4px 4px 0 0;
-    transition: height 0.4s ease;
-  }
-  &__label {
-    font-size: 11px;
-    color: #909399;
-    margin-top: 2px;
-  }
+.points-unit {
+  font-size: 14px;
+  color: #909399;
+}
+
+.points-detail {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 8px;
+  font-size: 13px;
+  color: #909399;
+}
+
+// 待办列表
+.todo-card {
+  height: 100%;
 }
 
 .todo-list {
-  max-height: 320px;
+  max-height: 360px;
   overflow-y: auto;
 }
 
@@ -352,11 +329,22 @@ watch(trendData, () => { trendMax.value = calcTrendMax() }, { immediate: true })
     border-bottom: none;
   }
 
+  &.is-overdue {
+    background: #fef0f0;
+    border-left: 3px solid #F56C6C;
+  }
+
   &__main {
     display: flex;
-    justify-content: space-between;
     align-items: center;
     gap: 8px;
+  }
+
+  &__no {
+    font-size: 12px;
+    color: #909399;
+    font-family: monospace;
+    flex-shrink: 0;
   }
 
   &__title {
@@ -369,16 +357,26 @@ watch(trendData, () => { trendMax.value = calcTrendMax() }, { immediate: true })
     flex: 1;
   }
 
-  &__tags {
-    flex-shrink: 0;
-  }
-
   &__meta {
     display: flex;
-    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-top: 6px;
     font-size: 12px;
     color: #909399;
-    margin-top: 4px;
+  }
+
+  &__deadline {
+    color: #E6A23C;
+
+    &.is-overdue {
+      color: #F56C6C;
+      font-weight: 600;
+    }
+  }
+
+  &__assignee {
+    color: #606266;
   }
 }
 </style>

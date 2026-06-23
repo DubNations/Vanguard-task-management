@@ -5,8 +5,6 @@ from django.db import models
 from apps.tasks.models import Task, TaskHistory, TaskParticipant
 from apps.tasks.services.task_service import TaskService
 from apps.accounts.models import User
-from apps.tasks.services.task_service import TaskService
-from apps.accounts.models import User
 
 
 # 中文 → 英文映射

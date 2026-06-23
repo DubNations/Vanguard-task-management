@@ -191,8 +191,15 @@ class UserResetPasswordView(views.APIView):
             return Response({'error': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
 
         new_password = request.data.get('new_password', '')
-        if not new_password or len(new_password) < 6:
-            return Response({'error': '密码长度至少6位'}, status=status.HTTP_400_BAD_REQUEST)
+        if not new_password:
+            return Response({'error': '请输入新密码'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 使用 Django 全局密码验证器（最小8位、复杂度等）
+        from django.contrib.auth.password_validation import validate_password
+        try:
+            validate_password(new_password)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(new_password)
         user.save()

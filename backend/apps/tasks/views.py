@@ -118,38 +118,70 @@ class TaskDetailView(generics.RetrieveUpdateAPIView):
             serializer.instance, serializer.validated_data, self.request.user
         )
 
+    def destroy(self, request, *args, **kwargs):
+        task = self.get_object()
+
+        # COMPLETED/CANCELLED 不可删除
+        if task.status in (Task.Status.COMPLETED, Task.Status.CANCELLED):
+            return Response(
+                {'error': '已完成/已取消的任务不可删除'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 清理物理文件（CASCADE 会删数据库记录，但物理文件会残留）
+        for f in task.files.all():
+            try:
+                f.file.delete(save=False)
+            except Exception:
+                logger.warning('删除物理文件失败: %s', f, exc_info=True)
+
+        # 清缓存
+        from .services.task_service import _clear_dashboard_cache
+        participant_ids = list(task.participants.values_list('user_id', flat=True))
+        _clear_dashboard_cache(task.creator_id, task.assignee_id, *participant_ids)
+
+        task_no = task.task_no
+        task.delete()
+        logger.info('任务已删除: %s by user %s', task_no, request.user)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class TaskTransitionView(views.APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
-        try:
-            task = Task.objects.get(pk=pk)
-        except Task.DoesNotExist:
-            return Response({'error': '任务不存在'}, status=status.HTTP_404_NOT_FOUND)
+        from django.db import transaction
 
-        # 对象级权限检查
-        perm = IsOwnerOrLeader()
-        if not perm.has_object_permission(request, self, task):
-            raise PermissionDenied('您无权操作此任务')
+        # 使用 select_for_update 防止并发状态转换竞态
+        with transaction.atomic():
+            try:
+                task = Task.objects.select_for_update().get(pk=pk)
+            except Task.DoesNotExist:
+                return Response({'error': '任务不存在'}, status=status.HTTP_404_NOT_FOUND)
 
-        # 派发模式完成：仅总牵头人可触发
-        new_status = request.data.get('status')
-        if (new_status == Task.Status.COMPLETED
-                and task.task_mode == Task.TaskMode.ASSIGNED):
-            if not self._is_chief_lead(request.user, task):
-                raise PermissionDenied('仅总牵头人可完成派发任务')
+            # 对象级权限检查
+            perm = IsOwnerOrLeader()
+            if not perm.has_object_permission(request, self, task):
+                raise PermissionDenied('您无权操作此任务')
 
-        serializer = TaskTransitionSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+            # 派发模式完成：仅总牵头人可触发
+            new_status = request.data.get('status')
+            if (new_status == Task.Status.COMPLETED
+                    and task.task_mode == Task.TaskMode.ASSIGNED):
+                if not self._is_chief_lead(request.user, task):
+                    raise PermissionDenied('仅总牵头人可完成派发任务')
 
-        try:
-            task = TaskService.transition_status(
-                task, serializer.validated_data['status'],
-                request.user, serializer.validated_data.get('note', '')
-            )
-        except ValueError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            serializer = TaskTransitionSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+
+            try:
+                task = TaskService.transition_status(
+                    task, serializer.validated_data['status'],
+                    request.user, serializer.validated_data.get('note', '')
+                )
+            except ValueError as e:
+                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(TaskDetailSerializer(task, context={'request': request}).data)
 
@@ -309,6 +341,13 @@ class TaskClaimView(views.APIView):
                 )
             except Exception:
                 logger.warning('额满通知发送失败: task=%s', task.task_no, exc_info=True)
+
+        # 清缓存：领取人 + 创建人
+        from django.core.cache import cache as _cache
+        _cache.delete(f'dashboard:member:{request.user.id}')
+        _cache.delete(f'dashboard:leader:{request.user.id}')
+        _cache.delete(f'dashboard:member:{task.creator_id}')
+        _cache.delete(f'dashboard:leader:{task.creator_id}')
 
         return Response(TaskParticipantSerializer(participant).data, status=status.HTTP_201_CREATED)
 
@@ -572,14 +611,17 @@ class TaskCommentListView(generics.ListCreateAPIView):
         if task.creator and task.creator != self.request.user:
             recipients.add(task.creator)
         for recipient in recipients:
-            Notification.objects.create(
-                recipient=recipient,
-                type=Notification.Type.TASK_COMMENT,
-                title=f'新评论: {task.title}',
-                content=f'{self.request.user.display_name}: {comment.content[:50]}',
-                task=task,
-                actor=self.request.user,
-            )
+            try:
+                Notification.objects.create(
+                    recipient=recipient,
+                    type=Notification.Type.TASK_COMMENT,
+                    title=f'新评论: {task.title}',
+                    content=f'{self.request.user.display_name}: {comment.content[:50]}',
+                    task=task,
+                    actor=self.request.user,
+                )
+            except Exception:
+                logger.warning('评论通知发送失败: task=%s recipient=%s', task.task_no, recipient.pk, exc_info=True)
 
 
 class KanbanView(views.APIView):

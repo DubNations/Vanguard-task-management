@@ -152,6 +152,8 @@ def _export_csv(qs, job):
 
 def _export_pdf(qs, job):
     """导出 PDF（使用 WeasyPrint，本地开发环境不可用时优雅降级）。"""
+    from apps.tasks.models import Task
+
     try:
         from weasyprint import HTML
     except ImportError:
