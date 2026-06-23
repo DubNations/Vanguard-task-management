@@ -1,5 +1,5 @@
 from django.db import models
-from django.db.models import Count, Q, Avg, F
+from django.db.models import Count, Q, Avg, F, Exists, OuterRef
 from django.utils import timezone
 from datetime import timedelta
 
@@ -9,9 +9,17 @@ class DashboardService:
 
     @staticmethod
     def _filter_by_user(qs, user):
-        """根据用户角色过滤查询集：非 superuser/leader/admin 只统计自己的任务。"""
+        """根据用户角色过滤查询集：非 superuser/leader/admin 只统计自己的任务。
+        包含：assignee、creator、participants。
+        """
         if user and not user.is_superuser and user.role not in ('LEADER', 'ADMIN'):
-            qs = qs.filter(Q(assignee=user) | Q(creator=user))
+            from apps.tasks.models import TaskParticipant
+            participation_exists = Exists(
+                TaskParticipant.objects.filter(task=OuterRef('pk'), user=user)
+            )
+            qs = qs.filter(
+                Q(assignee=user) | Q(creator=user) | participation_exists
+            )
         return qs
 
     @staticmethod
