@@ -16,12 +16,12 @@
 ## 核心功能
 
 - **任务管理** — CRUD + 状态机（待领取 → 进行中 → 待审核 → 已完成）
-- **揭榜挂帅** — 无主任务可由成员主动领取
+- **三种任务模式** — 派发模式（ASSIGNED）、自由揭榜（FREE_CLAIM）、固定揭榜（FIXED_CLAIM，名额制）
 - **看板视图** — 按状态分列展示，支持拖拽
 - **三级权限** — 超级管理员 / 组长(含ADMIN) / 成员，数据按角色隔离
 - **积分系统** — 规则配置、积分发放/扣除、周/月/总排行榜
 - **导入导出** — 支持 xlsx / csv / wps 导入（含 WPS 2003-2024 全版本 + WPS 文字文档），Excel / CSV 导出
-- **仪表盘** — 多维度统计看板，待办事项、趋势图表
+- **角色化仪表盘** — MEMBER 个人工作台（待办/积分）、LEADER 团队管理台（逾期预警/成员负载）
 - **审计日志** — 全操作记录，筛选追溯
 - **通知系统** — 站内通知 + 邮件告警（任务分配、状态变更、逾期提醒）
 - **备份恢复** — 3-2-1 策略 + 一键还原
@@ -103,17 +103,20 @@ npm run dev
 │   │   └── tasks/              # 任务核心（CRUD/状态机/看板/评论）
 │   ├── common/                 # 通用模块（权限/分页/异常/中间件）
 │   ├── seedteam/               # Django 配置（settings/urls）
-│   ├── tests/                  # 测试套件（334 个测试）
+│   ├── tests/                  # 测试套件
 │   └── manage.py
 ├── frontend/                   # Vue 3 前端
 │   ├── src/
 │   │   ├── api/                # Axios 实例 & API 模块
 │   │   ├── components/         # 通用组件（StatusTag/PriorityTag）
-│   │   ├── composables/        # 组合式函数
+│   │   ├── components/dashboard/  # 仪表盘组件（StatCard/OverdueAlert/MemberWorkload）
+│   │   ├── composables/        # 组合式函数（usePermission/useTaskStatus）
+│   │   ├── directives/         # 自定义指令（v-auth）
 │   │   ├── layouts/            # 布局（MainLayout）
-│   │   ├── router/             # Vue Router
+│   │   ├── router/             # Vue Router（meta.minRole 权限路由）
 │   │   ├── stores/             # Pinia 状态管理
 │   │   ├── styles/             # 全局样式
+│   │   ├── types/              # TypeScript 类型定义
 │   │   └── views/              # 页面视图
 │   └── vite.config.ts
 ├── deploy/                     # 部署配置
@@ -133,29 +136,31 @@ npm run dev
 |------|------|------|
 | 认证 | `POST /auth/login/` | 登录获取 JWT |
 | 任务 | `GET/POST /tasks/` | 任务列表（筛选/搜索/排序/分页） |
-| | `GET/PUT /tasks/{id}/` | 任务详情 |
+| | `GET/PUT/DELETE /tasks/{id}/` | 任务详情（管理员/创建人可删除） |
 | | `POST /tasks/{id}/transition/` | 状态转换 |
-| | `POST /tasks/{id}/claim/` | 揭榜挂帅 |
+| | `POST /tasks/{id}/claim/` | 揭榜挂帅（支持名额制） |
 | | `GET/POST /tasks/{id}/comments/` | 评论 |
-| 看板 | `GET /tasks/kanban/` | 看板数据 |
+| | `GET/POST /tasks/{id}/participants/` | 参与者管理 |
+| 看板 | `GET /tasks/kanban/` | 看板数据（含 can_claim 字段） |
 | 积分 | `GET /points/balance/` | 积分余额 |
 | | `GET /points/leaderboard/` | 排行榜 |
 | | `GET/POST /points/rules/` | 积分规则配置 |
-| 导入 | `POST /imports/upload/` | 上传解析预览 |
+| 导入 | `POST /imports/upload/` | 上传解析预览（支持 WPS/xlsx/csv） |
 | | `POST /imports/{id}/confirm/` | 确认导入 |
 | 导出 | `POST /exports/create/` | 创建导出任务 |
 | | `GET /exports/{id}/download/` | 下载导出文件 |
 | 文件 | `POST /files/upload/{task_id}/` | 上传附件 |
 | | `GET /files/download/{id}/` | 下载附件 |
 | 管理 | `GET /admin/audit/` | 审计日志 |
-| 仪表盘 | `GET /dashboard/*` | 统计数据 |
+| 仪表盘 | `GET /dashboard/member/` | MEMBER 个人工作台 |
+| | `GET /dashboard/leader/` | LEADER/ADMIN 团队管理台 |
 
 ## 开发
 
 ### 运行测试
 
 ```bash
-# 后端（334 个测试）
+# 后端
 cd backend
 DJANGO_ENV=local python -m pytest tests/ -v
 
@@ -168,9 +173,23 @@ npx vue-tsc --noEmit
 
 | 角色 | 说明 | 数据范围 |
 |------|------|----------|
-| 超级管理员 | `is_superuser` | 全部数据 |
-| 组长/ADMIN | `role=LEADER` 或 `role=ADMIN` | 全部数据 |
-| 成员 | `role=MEMBER` | 仅自己负责/创建的任务 |
+| 超级管理员 | `is_superuser` | 全部数据，可删除任务 |
+| 组长/ADMIN | `role=LEADER` 或 `role=ADMIN` | 全部数据，可删除任务 |
+| 成员 | `role=MEMBER` | 仅自己负责/创建/参与的任务，可删除自己创建的任务 |
+
+### 任务模式
+
+| 模式 | 说明 | 状态流转 |
+|------|------|----------|
+| 派发（ASSIGNED） | 管理员指派负责人/参与者 | PENDING → IN_PROGRESS（创建即流转） |
+| 自由揭榜（FREE_CLAIM） | 所有成员可领取，不限人数 | PENDING → IN_PROGRESS（领取即流转） |
+| 固定揭榜（FIXED_CLAIM） | 管理员设定名额，额满自动流转 | PENDING → IN_PROGRESS（名额满才流转） |
+
+### 仪表盘
+
+- **MEMBER 工作台** (`GET /dashboard/member/`)：状态统计、本月积分、待办任务列表（按紧急度排序）
+- **LEADER 管理台** (`GET /dashboard/leader/`)：全团队统计、成员负载、逾期任务预警、月度团队积分
+- 后端 60 秒缓存，任务创建/状态转换/领取时自动清除
 
 ### 积分规则
 
