@@ -26,6 +26,21 @@ const loading = ref(false)
 const newComment = ref('')
 const claimLoading = ref(false)
 const completeLoading = ref(false)
+const editLoading = ref(false)
+const editDialogVisible = ref(false)
+const editForm = reactive({
+  title: '',
+  description: '',
+  priority: 'MEDIUM',
+  deadline: '',
+  reward_points: 0,
+  task_mode: 'ASSIGNED',
+  max_claimers: 3,
+  task_source: '',
+  dispatcher_name: '',
+  completion_criteria: '',
+  output: '',
+})
 
 const transitions = computed(() => {
   if (!task.value) return []
@@ -50,6 +65,53 @@ const canCompleteAsChiefLead = computed(() => {
     (p: any) => p.user === authStore.user?.id && p.role === 'CHIEF_LEAD'
   )
 })
+
+const canEdit = computed(() => {
+  if (!task.value) return false
+  if (authStore.user?.is_superuser || authStore.user?.role === 'LEADER' || authStore.user?.role === 'ADMIN') return true
+  return task.value.creator === authStore.user?.id
+})
+
+const openEditDialog = () => {
+  if (!task.value) return
+  editForm.title = task.value.title
+  editForm.description = task.value.description || ''
+  editForm.priority = task.value.priority
+  editForm.deadline = task.value.deadline ? task.value.deadline.split('T')[0] : ''
+  editForm.reward_points = task.value.reward_points || 0
+  editForm.task_mode = task.value.task_mode
+  editForm.max_claimers = task.value.max_claimers || 3
+  editForm.task_source = task.value.task_source || ''
+  editForm.dispatcher_name = task.value.dispatcher_name || ''
+  editForm.completion_criteria = task.value.completion_criteria || ''
+  editForm.output = task.value.output || ''
+  editDialogVisible.value = true
+}
+
+const submitEdit = async () => {
+  if (!editForm.title.trim()) {
+    ElMessage.warning('任务标题不能为空')
+    return
+  }
+  editLoading.value = true
+  try {
+    const payload: any = { ...editForm }
+    if (payload.deadline) {
+      payload.deadline = payload.deadline + 'T00:00:00'
+    }
+    if (payload.task_mode !== 'FIXED_CLAIM') {
+      delete payload.max_claimers
+    }
+    await api.patch(`/tasks/${route.params.id}/`, payload)
+    ElMessage.success('任务已更新')
+    editDialogVisible.value = false
+    await fetchTask()
+  } catch {
+    // handled by interceptor
+  } finally {
+    editLoading.value = false
+  }
+}
 
 const fetchTask = async () => {
   loading.value = true
@@ -202,6 +264,10 @@ onMounted(fetchTask)
           </el-tag>
         </div>
         <div style="display: flex; gap: 8px;">
+          <!-- 编辑按钮 -->
+          <el-button v-if="canEdit" @click="openEditDialog">
+            编辑
+          </el-button>
           <!-- 揭榜领取按钮 -->
           <el-button v-if="canClaim" type="primary" :loading="claimLoading" @click="handleClaim">
             领取任务
@@ -407,6 +473,64 @@ onMounted(fetchTask)
           </el-card>
         </el-col>
       </el-row>
+
+      <!-- 编辑弹窗 -->
+      <el-dialog v-model="editDialogVisible" title="编辑任务" width="640px" destroy-on-close>
+        <el-form :model="editForm" label-width="100px">
+          <el-form-item label="任务标题">
+            <el-input v-model="editForm.title" maxlength="200" show-word-limit />
+          </el-form-item>
+          <el-form-item label="描述">
+            <el-input v-model="editForm.description" type="textarea" :rows="3" />
+          </el-form-item>
+          <el-row :gutter="16">
+            <el-col :span="12">
+              <el-form-item label="优先级">
+                <el-select v-model="editForm.priority" style="width: 100%">
+                  <el-option label="低" value="LOW" />
+                  <el-option label="中" value="MEDIUM" />
+                  <el-option label="高" value="HIGH" />
+                  <el-option label="紧急" value="URGENT" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="截止日期">
+                <el-date-picker v-model="editForm.deadline" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-form-item label="奖励积分">
+            <el-input-number v-model="editForm.reward_points" :min="0" :max="9999" />
+          </el-form-item>
+          <el-form-item label="任务模式">
+            <el-radio-group v-model="editForm.task_mode">
+              <el-radio value="ASSIGNED">派发</el-radio>
+              <el-radio value="FREE_CLAIM">自由揭榜</el-radio>
+              <el-radio value="FIXED_CLAIM">固定揭榜</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="editForm.task_mode === 'FIXED_CLAIM'" label="揭榜名额">
+            <el-input-number v-model="editForm.max_claimers" :min="1" :max="99" />
+          </el-form-item>
+          <el-form-item label="任务来源">
+            <el-input v-model="editForm.task_source" />
+          </el-form-item>
+          <el-form-item label="派发人">
+            <el-input v-model="editForm.dispatcher_name" />
+          </el-form-item>
+          <el-form-item label="完成标准">
+            <el-input v-model="editForm.completion_criteria" type="textarea" :rows="2" />
+          </el-form-item>
+          <el-form-item label="产出要求">
+            <el-input v-model="editForm.output" type="textarea" :rows="2" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="editDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="editLoading" @click="submitEdit">保存</el-button>
+        </template>
+      </el-dialog>
     </template>
   </div>
 </template>

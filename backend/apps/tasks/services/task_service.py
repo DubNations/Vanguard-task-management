@@ -251,7 +251,8 @@ class TaskService:
 
         updatable = ['title', 'description', 'priority', 'deadline', 'progress',
                       'assignee', 'reviewer', 'tags', 'custom_fields', 'reward_points',
-                      'task_source', 'completion_criteria', 'dispatcher_name', 'output']
+                      'task_source', 'completion_criteria', 'dispatcher_name', 'output',
+                      'task_mode', 'max_claimers']
 
         for field in updatable:
             if field not in data:
