@@ -51,12 +51,24 @@ class TaskService:
         for _retry in range(5):
             try:
                 task_no = TaskService.generate_task_no()
+                # 派发模式有负责人/参与者：直接进入进行中；揭榜模式：待领取
+                initial_status = Task.Status.PENDING
+                initial_started_at = None
+                if task_mode == Task.TaskMode.ASSIGNED:
+                    has_assignee = data.get('assignee') is not None
+                    has_participants = bool(participants_data)
+                    if has_assignee or has_participants:
+                        initial_status = Task.Status.IN_PROGRESS
+                        initial_started_at = timezone.now()
+
                 task = Task.objects.create(
                     task_no=task_no,
                     title=data['title'],
                     description=data.get('description', ''),
                     priority=data.get('priority', Task.Priority.MEDIUM),
+                    status=initial_status,
                     deadline=data.get('deadline'),
+                    started_at=initial_started_at,
                     assignee=data.get('assignee'),
                     reviewer=data.get('reviewer'),
                     creator=user,
