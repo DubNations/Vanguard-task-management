@@ -92,3 +92,11 @@ _*.json
 _*.txt
 _*.cmd
 _*.md
+
+# Dev output logs
+frontend/dev-error.txt
+frontend/dev-output.txt
+frontend/vite-output.txt
+
+# Test data
+test_sample.xlsx
